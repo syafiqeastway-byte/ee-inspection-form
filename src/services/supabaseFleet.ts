@@ -21,13 +21,13 @@ const LOCAL_STORAGE_SUPABASE_KEY = 'eastway_supabase_anon_key';
  * Retrieves the Supabase Anon / API Key from environment or localStorage
  */
 export function getSupabaseAnonKey(): string {
-  // 1. From Vite env vars
+  // 1. From Vite env vars (ignore placeholder text)
   const envKey = (
     (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
     (import.meta as any).env?.VITE_SUPABASE_KEY ||
     ''
   ).trim();
-  if (envKey) return envKey;
+  if (envKey && envKey !== 'YOUR_SUPABASE_ANON_KEY') return envKey;
 
   // 2. From localStorage if configured
   if (typeof window !== 'undefined') {
@@ -215,14 +215,20 @@ export async function fetchSupabaseMewpFleet(): Promise<SupabaseSyncResult> {
   const customUrl = (import.meta as any).env?.VITE_SUPABASE_FLEET_URL || DEFAULT_SUPABASE_FLEET_URL;
   const apiKey = getSupabaseAnonKey();
 
-  // URL setup - Ensure select=* to get all columns
+  // URL setup - Request all 656+ rows using select=* and limit=5000
   let url = customUrl.trim();
   const separator = url.includes('?') ? '&' : '?';
-  const queryUrl = `${url}${separator}select=*`;
+  let queryUrl = `${url}${separator}select=*&limit=5000`;
+
+  if (apiKey) {
+    queryUrl += `&apikey=${encodeURIComponent(apiKey)}`;
+  }
 
   const headers: Record<string, string> = {
     'Accept': 'application/json',
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'Range': '0-4999',
+    'Prefer': 'count=exact'
   };
 
   if (apiKey) {
@@ -249,7 +255,7 @@ export async function fetchSupabaseMewpFleet(): Promise<SupabaseSyncResult> {
         }
 
         if (parsedFleet.length > 0) {
-          // Cache in localStorage
+          // Cache full fleet list in localStorage
           try {
             localStorage.setItem(LOCAL_STORAGE_SUPABASE_FLEET_KEY, JSON.stringify(parsedFleet));
             savePmaDatabase(parsedFleet);
@@ -265,37 +271,37 @@ export async function fetchSupabaseMewpFleet(): Promise<SupabaseSyncResult> {
           };
         }
       }
-    } else {
-      // Analyze error (e.g. 401 Unauthorized / missing apikey)
-      const errorText = await res.text().catch(() => '');
-      const isAuthError = res.status === 401 || res.status === 403 || errorText.includes('apikey');
+    }
 
-      // Try reading cached fleet if previously synced
-      const cached = getCachedSupabaseFleet();
-      if (cached && cached.length > 0) {
-        return {
-          success: false,
-          count: cached.length,
-          data: cached,
-          error: isAuthError
-            ? 'Supabase REST API memerlukan API Key (anon key).'
-            : `Supabase status: ${res.status}`,
-          source: 'cache',
-          requiresApiKey: isAuthError
-        };
-      }
+    // If HTTP error or missing apikey
+    const errorText = await res.text().catch(() => '');
+    const isAuthError = res.status === 401 || res.status === 403 || errorText.includes('apikey');
 
+    // Try reading cached fleet if previously synced
+    const cached = getCachedSupabaseFleet();
+    if (cached && cached.length > 0) {
       return {
         success: false,
-        count: INITIAL_PMA_DATABASE.length,
-        data: INITIAL_PMA_DATABASE,
+        count: cached.length,
+        data: cached,
         error: isAuthError
-          ? 'Supabase REST API memerlukan API Key (anon key).'
-          : `HTTP ${res.status}: ${errorText || res.statusText}`,
-        source: 'local',
+          ? 'Supabase REST API requires an API Key (anon key).'
+          : `Supabase status: ${res.status}`,
+        source: 'cache',
         requiresApiKey: isAuthError
       };
     }
+
+    return {
+      success: false,
+      count: INITIAL_PMA_DATABASE.length,
+      data: INITIAL_PMA_DATABASE,
+      error: isAuthError
+        ? 'Supabase REST API requires an API Key (anon key).'
+        : `HTTP ${res.status}: ${errorText || res.statusText}`,
+      source: 'local',
+      requiresApiKey: isAuthError
+    };
   } catch (netErr: any) {
     console.warn('Network error accessing Supabase REST API:', netErr);
     const cached = getCachedSupabaseFleet();
@@ -307,13 +313,6 @@ export async function fetchSupabaseMewpFleet(): Promise<SupabaseSyncResult> {
       source: cached ? 'cache' : 'local'
     };
   }
-
-  return {
-    success: false,
-    count: INITIAL_PMA_DATABASE.length,
-    data: INITIAL_PMA_DATABASE,
-    source: 'local'
-  };
 }
 
 /**

@@ -18,7 +18,9 @@ import {
   Search,
   ChevronDown,
   PlusCircle,
-  RefreshCw
+  RefreshCw,
+  Key,
+  X
 } from 'lucide-react';
 
 import {
@@ -44,7 +46,7 @@ import {
   searchPma
 } from './data/pmaDatabase';
 
-import { fetchSupabaseMewpFleet, SupabaseSyncResult } from './services/supabaseFleet';
+import { fetchSupabaseMewpFleet, getSupabaseAnonKey, setSupabaseAnonKey, SupabaseSyncResult } from './services/supabaseFleet';
 
 import {
   generateNextFormNumber,
@@ -182,7 +184,9 @@ export default function App() {
     statusMessage: string;
   }
 
-  // Supabase Sync State
+  // Supabase Sync State & Key Modal
+  const [isSupabaseKeyModalOpen, setIsSupabaseKeyModalOpen] = useState(false);
+  const [supabaseAnonKeyInput, setSupabaseAnonKeyInput] = useState('');
   const [supabaseSyncStatus, setSupabaseSyncStatus] = useState<{
     isLoading: boolean;
     count: number;
@@ -213,11 +217,13 @@ export default function App() {
 
       if (showToastNotice) {
         if (res.success) {
-          showToast(`Berjaya memuat turun ${res.count} mesin MEWP dari Supabase`, 'success');
+          showToast(`Successfully downloaded ${res.count} MEWP machines from Supabase`, 'success');
         } else if (res.requiresApiKey) {
-          showToast('Supabase REST API memerlukan API Key (anon key) untuk capaian luar.', 'warning');
+          showToast('Supabase REST API requires an API Key (anon key) for external access.', 'warning');
+          setSupabaseAnonKeyInput(getSupabaseAnonKey());
+          setIsSupabaseKeyModalOpen(true);
         } else {
-          showToast(`Armada dimuat: ${res.count} rekod (${res.source}).`, 'info');
+          showToast(`Fleet loaded: ${res.count} records (${res.source}).`, 'info');
         }
       }
     } catch (e: any) {
@@ -513,40 +519,40 @@ export default function App() {
 
     // 1. Validate Required General Fields
     if (!typeOfInspection) {
-      showToast('Sila pilih Type of Inspection (1st Inspection atau PDI)', 'warning');
+      showToast('Please select Type of Inspection (1st Inspection or PDI)', 'warning');
       scrollToAndHighlight('field-type-of-inspection');
       return;
     }
 
     if (!pmaNumber.trim()) {
-      showToast('Sila masukkan atau pilih PMA Number', 'warning');
+      showToast('Please enter or select a PMA Number', 'warning');
       scrollToAndHighlight('field-pma-number');
       return;
     }
 
     if (!serial.trim()) {
-      showToast('Sila masukkan Serial Number', 'warning');
+      showToast('Please enter Serial Number', 'warning');
       scrollToAndHighlight('field-serial-number');
       return;
     }
 
     if (!hourMeter.trim()) {
-      showToast('Sila masukkan Hour Meter', 'warning');
+      showToast('Please enter Hour Meter reading', 'warning');
       scrollToAndHighlight('field-hour-meter');
       return;
     }
 
     if (!machineLocation) {
-      showToast('Sila pilih Machine Location', 'warning');
+      showToast('Please select Machine Location', 'warning');
       scrollToAndHighlight('field-machine-location');
       return;
     }
 
-    // 2. Validate Checklist Items - Cari item pertama yang belum ditanda dan lompat terus ke situ!
+    // 2. Validate Checklist Items - Find first unselected item and scroll to it
     for (const sec of currentSections) {
       for (const item of sec.items) {
         if (!checklistAnswers[item.name]) {
-          showToast(`Sila tanda kriteria: "${item.label}" (${sec.title})`, 'warning');
+          showToast(`Please evaluate criteria: "${item.label}" (${sec.title})`, 'warning');
           scrollToAndHighlight(`checklist-item-${item.name}`);
           return;
         }
@@ -556,7 +562,7 @@ export default function App() {
     // 3. Validate Required Section Comments (e.g. Battery readings or Engine alternator output)
     for (const sec of currentSections) {
       if (sec.commentRequired && !sectionComments[sec.commentName]?.trim()) {
-        showToast(`Sila isi bacaan/ulasan wajib bagi "${sec.title}"`, 'warning');
+        showToast(`Please enter required reading/comment for "${sec.title}"`, 'warning');
         scrollToAndHighlight(`section-comment-${sec.commentName}`);
         return;
       }
@@ -565,7 +571,7 @@ export default function App() {
     // 4. Validate Required Pictures
     for (const cfg of currentPictureConfigs) {
       if (cfg.required && !pictures[cfg.key]) {
-        showToast(`Sila tangkap/muat naik foto wajib bagi "${cfg.label}"`, 'warning');
+        showToast(`Please capture/upload required photo for "${cfg.label}"`, 'warning');
         scrollToAndHighlight(`photo-card-${cfg.key}`);
         return;
       }
@@ -573,25 +579,25 @@ export default function App() {
 
     // 5. Validate Sign-off
     if (!overallComment.trim()) {
-      showToast('Sila masukkan Overall Comment', 'warning');
+      showToast('Please enter Overall Comment', 'warning');
       scrollToAndHighlight('field-overall-comment');
       return;
     }
 
     if (!inspectionStatus) {
-      showToast('Sila pilih Final Inspection Status (PASS / FAILED / FAILED & MISUSE)', 'warning');
+      showToast('Please select Final Inspection Status (PASS / FAILED / FAILED & MISUSE)', 'warning');
       scrollToAndHighlight('field-inspection-status');
       return;
     }
 
     if (!technicianName.trim()) {
-      showToast('Sila masukkan Nama Technician / Inspector', 'warning');
+      showToast('Please enter Technician / Inspector Name', 'warning');
       scrollToAndHighlight('field-technician-name');
       return;
     }
 
     if (!inspectionDate) {
-      showToast('Sila pilih Tarikh Pemeriksaan', 'warning');
+      showToast('Please select Inspection Date', 'warning');
       scrollToAndHighlight('field-inspection-date');
       return;
     }
@@ -952,16 +958,22 @@ export default function App() {
                         <Loader2 className="w-3 h-3 animate-spin" /> Syncing Supabase...
                       </span>
                     ) : (
-                      <span
-                        className={`text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 ${
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSupabaseAnonKeyInput(getSupabaseAnonKey());
+                          setIsSupabaseKeyModalOpen(true);
+                        }}
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 cursor-pointer transition-colors ${
                           supabaseSyncStatus.source === 'supabase'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold'
-                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold hover:bg-emerald-100'
+                            : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
                         }`}
-                        title="MEWP FLEET Database"
+                        title="Click to configure Supabase Anon API Key"
                       >
-                        SUPABASE: {pmaDatabase.length} FLEET
-                      </span>
+                        <Key className="w-2.5 h-2.5 text-slate-500" />
+                        <span>SUPABASE: {pmaDatabase.length} FLEET</span>
+                      </button>
                     )}
                     <button
                       type="button"
@@ -1485,6 +1497,67 @@ export default function App() {
         isOpen={activeTab === 'manuals'}
         onClose={() => setActiveTab('form')}
       />
+
+      {/* Supabase Key Configuration Modal */}
+      {isSupabaseKeyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5 text-blue-600" />
+                <h3 className="text-base font-bold text-slate-900">Supabase MEWP FLEET Settings</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSupabaseKeyModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Endpoint: <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-[11px]">https://rgpkzyqytepatahedsfp.supabase.co/rest/v1/MEWP FLEET</code>
+              <br />
+              Enter <strong>Supabase Anon API Key</strong> to download all 656 MEWP machine records from Supabase.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 uppercase block">
+                Supabase Anon API Key
+              </label>
+              <input
+                type="text"
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                value={supabaseAnonKeyInput}
+                onChange={(e) => setSupabaseAnonKeyInput(e.target.value)}
+                className="w-full px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsSupabaseKeyModalOpen(false)}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setSupabaseAnonKey(supabaseAnonKeyInput);
+                  setIsSupabaseKeyModalOpen(false);
+                  await syncSupabaseFleet(true);
+                }}
+                className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold rounded-lg shadow transition-colors"
+              >
+                Save & Sync 656 Fleet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast System */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
