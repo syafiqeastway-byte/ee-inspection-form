@@ -13,11 +13,11 @@ export const Header: React.FC<HeaderProps> = ({
   historyCount,
 }) => {
   return (
-    <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white shadow-md">
+    <header className="sticky top-0 z-40 bg-slate-800 border-b border-slate-700 text-white shadow-md">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
         {/* Zone 1: Brand Wordmark (Single text element) */}
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-sm font-black text-sm">
+          <div className="w-9 h-9 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center text-white shadow-sm font-black text-sm">
             EW
           </div>
           <span className="text-base sm:text-lg font-bold tracking-tight text-white select-none">
@@ -26,7 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Zone 2: Navigation Links (Desktop & Tablet) */}
-        <nav className="hidden md:flex items-center gap-1 bg-slate-800/80 p-1 rounded-xl border border-slate-700/60">
+        <nav className="hidden md:flex items-center gap-1 bg-slate-900/60 p-1 rounded-xl border border-slate-700">
           <button
             type="button"
             onClick={() => onTabChange('form')}

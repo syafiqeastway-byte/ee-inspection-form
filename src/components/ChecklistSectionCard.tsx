@@ -29,9 +29,9 @@ export const ChecklistSectionCard: React.FC<ChecklistSectionCardProps> = ({
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-5 transition-shadow hover:shadow-md">
       {/* Section Header */}
-      <div className="bg-slate-800 text-white px-4 py-3.5 sm:px-6 sm:py-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-700">
+      <div className="bg-slate-700 text-white px-4 py-3.5 sm:px-6 sm:py-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-600">
         <div className="flex items-center gap-2.5">
-          <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+          <span className="w-2 h-2 rounded-full bg-slate-300"></span>
           <h3 className="text-sm sm:text-base font-bold tracking-wide uppercase">{section.title}</h3>
         </div>
 

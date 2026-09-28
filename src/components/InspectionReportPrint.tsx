@@ -66,18 +66,18 @@ export const InspectionReportPrint: React.FC<InspectionReportPrintProps> = ({ re
       <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden print:shadow-none print:border-none print:rounded-none">
         
         {/* Header */}
-        <div className="bg-slate-900 text-white p-6 sm:p-8 print:bg-slate-900 print:text-white">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-700 pb-5">
+        <div className="bg-slate-700 text-white p-6 sm:p-8 print:bg-slate-700 print:text-white">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-600 pb-5">
             <div className="flex items-center gap-3">
               <img
-                src="/EE LOGO.PNG"
+                src="/ee-logo.png"
                 alt="EE LOGO"
-                className="h-12 w-auto object-contain bg-white rounded-lg p-1"
+                className="h-12 w-auto max-w-[160px] object-contain"
                 onError={(e) => {
                   const target = e.currentTarget;
                   if (!target.dataset.triedFallback) {
                     target.dataset.triedFallback = 'true';
-                    target.src = '/ee-logo.svg';
+                    target.src = '/EE%20LOGO.png';
                   }
                 }}
               />

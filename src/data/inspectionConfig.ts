@@ -15,7 +15,7 @@ export const batteryPictureFieldsConfig: PictureFieldConfig[] = [
   { key: 'JOYSTICK', label: 'JOYSTICK', required: true },
   { key: 'DATA_PLATES', label: 'DATA PLATES', required: true },
   { key: 'PLATFORM_BASKET', label: 'PLATFORM BASKET', required: true },
-  { key: 'JIB_STRUCTURE', label: 'JIB STRUCTURE (IF APPLICABLE)', required: false, hint: 'Optional if machine does not have a jib' }
+  { key: 'JIB_STRUCTURE', label: 'JIB STRUCTURE (IF APPLICABLE)', required: false }
 ];
 
 // ENGINE TYPE PICTURES CONFIGURATION
@@ -33,7 +33,7 @@ export const enginePictureFieldsConfig: PictureFieldConfig[] = [
   { key: 'JOYSTICK', label: 'JOYSTICK', required: true },
   { key: 'DATA_PLATES', label: 'DATA PLATES', required: true },
   { key: 'PLATFORM_BASKET', label: 'PLATFORM BASKET', required: true },
-  { key: 'JIB_STRUCTURE', label: 'JIB STRUCTURE (IF APPLICABLE)', required: false, hint: 'Optional if machine does not have a jib' }
+  { key: 'JIB_STRUCTURE', label: 'JIB STRUCTURE (IF APPLICABLE)', required: false }
 ];
 
 // BATTERY TYPE CHECKLIST STRUCTURE

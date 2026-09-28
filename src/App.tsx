@@ -128,6 +128,14 @@ export default function App() {
 
   // Initialize DB and Form Number
   useEffect(() => {
+    // Auto-update date and time
+    const updateDateTime = () => {
+      setInspectionDate(getTodayDate());
+      setInspectionTime(getCurrentTime());
+    };
+    updateDateTime();
+    const timer = setInterval(updateDateTime, 10000);
+
     // Load PMA database from local storage initially
     const dbs = getStoredPmaDatabase();
     setPmaDatabase(dbs);
@@ -154,6 +162,8 @@ export default function App() {
 
     // Set initial form number from Google Sheet Column A
     fetchBackendFormNo('BATTERY').then((num) => setFormNo(num));
+
+    return () => clearInterval(timer);
   }, []);
 
   // Sync Form Number when Machine Type switches from Google Sheet Column A
@@ -645,17 +655,17 @@ export default function App() {
 
           {/* CARD 1: GENERAL MACHINE INFO */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="bg-blue-800 text-white px-4 sm:px-6 py-3.5 flex items-center gap-3.5">
+            <div className="bg-slate-700 text-white px-4 sm:px-6 py-3.5 flex items-center gap-3.5">
               <div className="flex-shrink-0">
                 <img
-                  src="/EE LOGO.PNG"
+                  src="/ee-logo.png"
                   alt="EE LOGO"
-                  className="h-10 sm:h-12 w-auto object-contain bg-white rounded-lg px-2 py-1 shadow-sm border border-blue-200"
+                  className="h-10 sm:h-12 w-auto max-w-[140px] sm:max-w-[170px] object-contain"
                   onError={(e) => {
                     const target = e.currentTarget;
                     if (!target.dataset.triedFallback) {
                       target.dataset.triedFallback = 'true';
-                      target.src = '/ee-logo.svg';
+                      target.src = '/EE%20LOGO.png';
                     }
                   }}
                 />
@@ -897,7 +907,7 @@ export default function App() {
 
           {/* CARD 2: INSPECTION MANUALS QUICK REFERENCE */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="bg-slate-600 text-white px-5 py-3 flex items-center justify-between">
+            <div className="bg-slate-700 text-white px-5 py-3 flex items-center justify-between">
               <h3 className="text-sm font-bold uppercase tracking-wide">
                 MANUAL MACHINE INSPECTION
               </h3>
@@ -979,7 +989,7 @@ export default function App() {
 
           {/* CARD 4: PICTURES UPLOAD SECTION */}
           <div id="pictures-section" className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="bg-slate-600 text-white px-5 py-3.5 border-b border-slate-500">
+            <div className="bg-slate-700 text-white px-5 py-3.5 border-b border-slate-600">
               <h3 className="text-sm sm:text-base font-bold uppercase tracking-wide">
                 {machineType} TYPE - PICTURES SECTION
               </h3>
@@ -987,7 +997,7 @@ export default function App() {
 
             <div className="p-4 sm:p-6">
               <p className="text-xs sm:text-sm text-slate-600 mb-4">
-                Please upload all required photos for this machine type before submitting. Jib Structure photo is optional if not applicable.
+                Please upload all required photos for this machine type before submitting.
               </p>
 
               {/* Photo Cards Grid */}
@@ -1011,7 +1021,7 @@ export default function App() {
 
           {/* CARD 5: OVERALL SIGN-OFF */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="bg-slate-600 text-white px-5 py-3.5">
+            <div className="bg-slate-700 text-white px-5 py-3.5">
               <h3 className="text-sm sm:text-base font-bold uppercase tracking-wide">OVERALL & SIGN-OFF</h3>
             </div>
 
@@ -1080,15 +1090,20 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Time <span className="text-red-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Time <span className="text-red-500">*</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                      AUTO SET
+                    </span>
+                  </div>
                   <input
                     type="time"
                     value={inspectionTime}
-                    onChange={(e) => setInspectionTime(e.target.value)}
+                    readOnly
                     required
-                    className="w-full px-3.5 py-2.5 bg-white text-slate-900 border border-slate-300 rounded-xl text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-600"
+                    className="w-full px-3.5 py-2.5 bg-slate-100 text-slate-800 border border-slate-300 rounded-xl text-xs sm:text-sm font-semibold cursor-default"
                   />
                 </div>
               </div>
