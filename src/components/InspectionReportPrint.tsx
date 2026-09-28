@@ -68,16 +68,29 @@ export const InspectionReportPrint: React.FC<InspectionReportPrintProps> = ({ re
         {/* Header */}
         <div className="bg-slate-900 text-white p-6 sm:p-8 print:bg-slate-900 print:text-white">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-700 pb-5">
-            <div>
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-7 h-7 text-blue-400" />
-                <h1 className="text-xl sm:text-2xl font-black tracking-tight uppercase">
-                  EASTWAY ENGINEERING
-                </h1>
+            <div className="flex items-center gap-3">
+              <img
+                src="/EE LOGO.PNG"
+                alt="EE LOGO"
+                className="h-12 w-auto object-contain bg-white rounded-lg p-1"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.dataset.triedFallback) {
+                    target.dataset.triedFallback = 'true';
+                    target.src = '/ee-logo.svg';
+                  }
+                }}
+              />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl sm:text-2xl font-black tracking-tight uppercase">
+                    EASTWAY ENGINEERING
+                  </h1>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
+                  MEWP DIGITAL EQUIPMENT INSPECTION REPORT
+                </p>
               </div>
-              <p className="text-xs sm:text-sm text-slate-300 mt-1">
-                MEWP DIGITAL EQUIPMENT INSPECTION REPORT
-              </p>
             </div>
             <div className="text-left sm:text-right">
               <div className="text-xs font-mono text-blue-300 uppercase tracking-wider">FORM NUMBER</div>

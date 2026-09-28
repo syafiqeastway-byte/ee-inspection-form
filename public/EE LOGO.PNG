@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 70" width="280" height="70">
+  <defs>
+    <linearGradient id="eeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0052CC" />
+      <stop offset="100%" stop-color="#0747A6" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF5630" />
+      <stop offset="100%" stop-color="#FF8B00" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Icon Badge -->
+  <g transform="translate(10, 8)">
+    <rect width="54" height="54" rx="10" fill="url(#eeGrad)" />
+    <!-- Stylized EE -->
+    <path d="M 14 14 L 38 14 L 38 21 L 22 21 L 22 24 L 35 24 L 35 30 L 22 30 L 22 33 L 38 33 L 38 40 L 14 40 Z" fill="#FFFFFF" />
+    <circle cx="44" cy="14" r="4" fill="url(#accentGrad)" />
+  </g>
+
+  <!-- Typography -->
+  <text x="76" y="34" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="22" font-weight="900" fill="#0747A6" letter-spacing="1">EASTWAY</text>
+  <text x="76" y="52" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#5E6C84" letter-spacing="2.5">ENGINEERING</text>
+</svg>

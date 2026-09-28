@@ -645,8 +645,24 @@ export default function App() {
 
           {/* CARD 1: GENERAL MACHINE INFO */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="bg-blue-800 text-white px-5 py-4 text-center">
-              <h2 className="text-xl font-bold uppercase tracking-wide">DIGITAL INSPECTION FORM</h2>
+            <div className="bg-blue-800 text-white px-4 sm:px-6 py-3.5 flex items-center gap-3.5">
+              <div className="flex-shrink-0">
+                <img
+                  src="/EE LOGO.PNG"
+                  alt="EE LOGO"
+                  className="h-10 sm:h-12 w-auto object-contain bg-white rounded-lg px-2 py-1 shadow-sm border border-blue-200"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (!target.dataset.triedFallback) {
+                      target.dataset.triedFallback = 'true';
+                      target.src = '/ee-logo.svg';
+                    }
+                  }}
+                />
+              </div>
+              <div>
+                <h2 className="text-lg sm:text-xl font-black uppercase tracking-wide">DIGITAL INSPECTION FORM</h2>
+              </div>
             </div>
 
             <div className="p-4 sm:p-6 space-y-4">
@@ -741,30 +757,12 @@ export default function App() {
                         onClick={() => handlePmaSelect(item)}
                         className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50 active:bg-blue-100 transition-colors flex items-center justify-between text-xs group"
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-blue-900 group-hover:text-blue-700">{item.pmaNumber}</span>
-                          {item.brand && (
-                            <span className="text-slate-600 font-medium text-[11px]">
-                              {item.brand} {item.model}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {item.type && (
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                              item.type === 'ENGINE' 
-                                ? 'bg-amber-100 text-amber-800' 
-                                : 'bg-blue-100 text-blue-800'
-                            }`}>
-                              {item.type}
-                            </span>
-                          )}
-                          {item.serial && (
-                            <span className="text-[10px] font-mono text-slate-400 hidden sm:inline">
-                              SN: {item.serial}
-                            </span>
-                          )}
-                        </div>
+                        <span className="font-bold text-blue-900 group-hover:text-blue-700">{item.pmaNumber}</span>
+                        {item.model && (
+                          <span className="text-slate-600 font-semibold text-xs">
+                            {item.model}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
