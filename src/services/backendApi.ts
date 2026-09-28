@@ -57,47 +57,12 @@ export async function fetchBackendFormNo(machineType: MachineType): Promise<stri
   const fallbackSheetName = isEngine ? 'ENGINE' : 'BATTERY';
   const prefix = isEngine ? 'EE-IFE-' : 'EE-IFB-';
 
-  // 1. If embedded in Google Apps Script HtmlService
-  if (hasGoogleScriptRun()) {
-    try {
-      const serverNum: string = await new Promise((resolve, reject) => {
-        google.script.run
-          .withSuccessHandler((res: string) => resolve(res))
-          .withFailureHandler((err: any) => reject(err))
-          .getLatestFormNumber(primarySheetName, prefix);
-      });
-      if (serverNum && serverNum.startsWith(prefix)) {
-        return serverNum;
-      }
-    } catch (e) {
-      console.warn('Apps Script fetch form no failed:', e);
-    }
-  }
-
-  // 2. Fetch via Apps Script Web App if URL is configured
-  const endpoint = getAppsScriptUrl();
-  if (endpoint) {
-    try {
-      const resp = await fetch(
-        `${endpoint}?action=getLatestFormNumber&sheetName=${encodeURIComponent(primarySheetName)}&prefix=${encodeURIComponent(prefix)}&spreadsheetId=${encodeURIComponent(SPREADSHEET_ID)}`
-      );
-      if (resp.ok) {
-        const json = await resp.json();
-        if (json && json.formNo) {
-          return json.formNo;
-        }
-      }
-    } catch (e) {
-      console.warn('Web App fetch form no notice:', e);
-    }
-  }
-
-  // 3. Direct Google Sheets GViz CSV queries (checks both 'ENGINE TYPE' & 'ENGINE' tabs)
+  // 1. Direct Google Sheets GViz CSV queries (Fastest, zero CORS/redirect issues)
   const candidateSheets = [primarySheetName, fallbackSheetName];
   for (const sheetCandidate of candidateSheets) {
     try {
-      const gvizUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetCandidate)}`;
-      const res = await fetch(gvizUrl);
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetCandidate)}&t=${Date.now()}`;
+      const res = await fetch(gvizUrl, { method: 'GET', cache: 'no-store' });
       if (res.ok) {
         const csvText = await res.text();
         const lines = csvText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
@@ -131,8 +96,44 @@ export async function fetchBackendFormNo(machineType: MachineType): Promise<stri
           return `${prefix}${String(next).padStart(3, '0')}`;
         }
       }
-    } catch (err) {
-      // Try next sheet candidate
+    } catch {
+      // Continue to next sheet candidate
+    }
+  }
+
+  // 2. If embedded in Google Apps Script HtmlService
+  if (hasGoogleScriptRun()) {
+    try {
+      const serverNum: string = await new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler((res: string) => resolve(res))
+          .withFailureHandler((err: any) => reject(err))
+          .getLatestFormNumber(primarySheetName, prefix);
+      });
+      if (serverNum && serverNum.startsWith(prefix)) {
+        return serverNum;
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  // 3. Fetch via Apps Script Web App if URL is configured
+  const endpoint = getAppsScriptUrl();
+  if (endpoint) {
+    try {
+      const resp = await fetch(
+        `${endpoint}?action=getLatestFormNumber&sheetName=${encodeURIComponent(primarySheetName)}&prefix=${encodeURIComponent(prefix)}&spreadsheetId=${encodeURIComponent(SPREADSHEET_ID)}&_t=${Date.now()}`,
+        { mode: 'cors', redirect: 'follow' }
+      );
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json && json.formNo) {
+          return json.formNo;
+        }
+      }
+    } catch {
+      // Silent fallback
     }
   }
 

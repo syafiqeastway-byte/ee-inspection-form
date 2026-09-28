@@ -124,11 +124,11 @@ export const InspectionReportPrint: React.FC<InspectionReportPrintProps> = ({ re
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl sm:text-2xl font-black tracking-tight uppercase">
-                    EASTWAY ENGINEERING
+                    EASYWAY ENGINEERING
                   </h1>
                 </div>
-                <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
-                  MEWP DIGITAL EQUIPMENT INSPECTION REPORT
+                <p className="text-xs sm:text-sm font-normal text-slate-300 mt-0.5 uppercase tracking-wider">
+                  MACHINE INSPECTION FORM
                 </p>
               </div>
             </div>

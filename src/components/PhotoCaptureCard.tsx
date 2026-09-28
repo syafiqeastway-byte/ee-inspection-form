@@ -45,6 +45,7 @@ export const PhotoCaptureCard: React.FC<PhotoCaptureCardProps> = ({
 
   return (
     <div
+      id={`photo-card-${fieldKey}`}
       className={`relative rounded-xl border p-3.5 transition-all flex flex-col justify-between ${
         imageValue
           ? 'bg-slate-50 border-blue-200 shadow-sm'

@@ -120,9 +120,20 @@ export default function App() {
     title: ''
   });
 
-  // UI State: Submitting & Toasts
+  // UI State: Submitting, Progress tracking & Toasts
+  interface SubmitProgressState {
+    step: 'photo' | 'pdf_generate' | 'pdf_upload' | 'sheet_save';
+    currentPhotoIndex: number;
+    totalPhotos: number;
+    currentPhotoLabel: string;
+    percent: number;
+    statusMessage: string;
+  }
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitProgressText, setSubmitProgressText] = useState('');
+  const [submitProgress, setSubmitProgress] = useState<SubmitProgressState | null>(null);
+  const [recentSubmittedRecord, setRecentSubmittedRecord] = useState<SavedInspectionRecord | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   // Initialize DB and Form Number
@@ -403,53 +414,80 @@ export default function App() {
     setIsPmaAutoFilled(false);
   };
 
+  // Helper to scroll smoothly and highlight missing / incomplete elements
+  const scrollToAndHighlight = (elementId: string, focusFirstInput = true) => {
+    const el = document.getElementById(elementId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-4', 'ring-red-500', 'bg-red-50', 'transition-all', 'duration-300');
+      setTimeout(() => {
+        el.classList.remove('ring-4', 'ring-red-500', 'bg-red-50');
+      }, 3500);
+
+      if (focusFirstInput) {
+        const inputEl = el.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+          'input:not([type="hidden"]), select, textarea, button'
+        );
+        if (inputEl) {
+          setTimeout(() => inputEl.focus(), 300);
+        }
+      }
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   // Form Submission Handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // 1. Validate Required General Fields
     if (!typeOfInspection) {
-      showToast('Please select Type of Inspection (1st Inspection or PDI)', 'warning');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      showToast('Sila pilih Type of Inspection (1st Inspection atau PDI)', 'warning');
+      scrollToAndHighlight('field-type-of-inspection');
       return;
     }
 
     if (!pmaNumber.trim()) {
-      showToast('Please enter or select a PMA Number', 'warning');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      showToast('Sila masukkan atau pilih PMA Number', 'warning');
+      scrollToAndHighlight('field-pma-number');
+      return;
+    }
+
+    if (!serial.trim()) {
+      showToast('Sila masukkan Serial Number', 'warning');
+      scrollToAndHighlight('field-serial-number');
+      return;
+    }
+
+    if (!hourMeter.trim()) {
+      showToast('Sila masukkan Hour Meter', 'warning');
+      scrollToAndHighlight('field-hour-meter');
       return;
     }
 
     if (!machineLocation) {
-      showToast('Please select Machine Location', 'warning');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      showToast('Sila pilih Machine Location', 'warning');
+      scrollToAndHighlight('field-machine-location');
       return;
     }
 
-    // 2. Validate Checklist Items
-    const unansweredItems: string[] = [];
-    currentSections.forEach((sec) => {
-      sec.items.forEach((item) => {
+    // 2. Validate Checklist Items - Cari item pertama yang belum ditanda dan lompat terus ke situ!
+    for (const sec of currentSections) {
+      for (const item of sec.items) {
         if (!checklistAnswers[item.name]) {
-          unansweredItems.push(item.label);
+          showToast(`Sila tanda kriteria: "${item.label}" (${sec.title})`, 'warning');
+          scrollToAndHighlight(`checklist-item-${item.name}`);
+          return;
         }
-      });
-    });
-
-    if (unansweredItems.length > 0) {
-      showToast(
-        `Please complete all inspection checklist items (${unansweredItems.length} items remaining)`,
-        'warning'
-      );
-      const firstSectionEl = document.getElementById('checklist-container');
-      if (firstSectionEl) firstSectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
+      }
     }
 
     // 3. Validate Required Section Comments (e.g. Battery readings or Engine alternator output)
     for (const sec of currentSections) {
       if (sec.commentRequired && !sectionComments[sec.commentName]?.trim()) {
-        showToast(`Please fill in required readings/comments for "${sec.title}"`, 'warning');
+        showToast(`Sila isi bacaan/ulasan wajib bagi "${sec.title}"`, 'warning');
+        scrollToAndHighlight(`section-comment-${sec.commentName}`);
         return;
       }
     }
@@ -457,54 +495,71 @@ export default function App() {
     // 4. Validate Required Pictures
     for (const cfg of currentPictureConfigs) {
       if (cfg.required && !pictures[cfg.key]) {
-        showToast(`Please capture/upload required photo for "${cfg.label}"`, 'warning');
-        const picturesSec = document.getElementById('pictures-section');
-        if (picturesSec) picturesSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        showToast(`Sila tangkap/muat naik foto wajib bagi "${cfg.label}"`, 'warning');
+        scrollToAndHighlight(`photo-card-${cfg.key}`);
         return;
       }
     }
 
     // 5. Validate Sign-off
+    if (!overallComment.trim()) {
+      showToast('Sila masukkan Overall Comment', 'warning');
+      scrollToAndHighlight('field-overall-comment');
+      return;
+    }
+
     if (!inspectionStatus) {
-      showToast('Please select Final Inspection Status (PASS / FAILED)', 'warning');
+      showToast('Sila pilih Final Inspection Status (PASS / FAILED / FAILED & MISUSE)', 'warning');
+      scrollToAndHighlight('field-inspection-status');
       return;
     }
 
     if (!technicianName.trim()) {
-      showToast('Please enter Technician / Inspector Name', 'warning');
+      showToast('Sila masukkan Nama Technician / Inspector', 'warning');
+      scrollToAndHighlight('field-technician-name');
+      return;
+    }
+
+    if (!inspectionDate) {
+      showToast('Sila pilih Tarikh Pemeriksaan', 'warning');
+      scrollToAndHighlight('field-inspection-date');
       return;
     }
 
     // Submit Process
     setIsSubmitting(true);
-    setSubmitProgressText('UPLOADING PHOTOS...');
+    setSubmitProgressText('PREPARING UPLOAD...');
 
     const uploadedUrlMap: Record<string, string> = {};
-    const activeKeys = currentPictureConfigs.map((cfg) => cfg.key);
+    const photosToUpload = currentPictureConfigs.filter((cfg) => !!pictures[cfg.key]);
+    const totalPhotos = photosToUpload.length;
 
-    try {
-      // 1. Parallel Upload of all active images to Google Drive
-      const uploadPromises = activeKeys.map(async (key) => {
-        const base64Data = pictures[key];
-        if (base64Data) {
-          const res = await uploadSingleImageToDrive(base64Data, key, pmaNumber);
-          return { key, success: res.success, url: res.url || base64Data };
-        }
-        return { key, success: true, url: '' };
+    // 1. Sequential upload of active images to Google Drive with progress counter (1/14, 2/14, etc.)
+    for (let i = 0; i < totalPhotos; i++) {
+      const cfg = photosToUpload[i];
+      const photoIdx = i + 1;
+      const percent = Math.round((photoIdx / (totalPhotos + 3)) * 75);
+
+      setSubmitProgress({
+        step: 'photo',
+        currentPhotoIndex: photoIdx,
+        totalPhotos: totalPhotos,
+        currentPhotoLabel: cfg.label,
+        percent: percent,
+        statusMessage: `Uploading Pictures (${photoIdx}/${totalPhotos}): ${cfg.label}`
       });
+      setSubmitProgressText(`UPLOADING PICTURES (${photoIdx}/${totalPhotos})...`);
 
-      const results = await Promise.all(uploadPromises);
-      for (const res of results) {
-        if (res.success) {
-          uploadedUrlMap[res.key] = res.url;
-        } else {
-          throw new Error(`Upload failed for photo: ${res.key}`);
+      const base64Data = pictures[cfg.key];
+      if (base64Data) {
+        try {
+          const res = await uploadSingleImageToDrive(base64Data, cfg.key, pmaNumber);
+          uploadedUrlMap[cfg.key] = res.url || base64Data;
+        } catch (uploadErr: any) {
+          console.error(`Image upload error for ${cfg.key}:`, uploadErr);
+          uploadedUrlMap[cfg.key] = base64Data;
         }
       }
-    } catch (uploadErr: any) {
-      console.error('Image upload error:', uploadErr);
-      showToast(`Photo upload notice: ${uploadErr.message || uploadErr}`, 'warning');
-      // Continue with local preview if offline
     }
 
     const activeFormNo = (formNo && formNo !== 'Loading Form No...') ? formNo : generateNextFormNumber(machineType);
@@ -537,11 +592,29 @@ export default function App() {
     };
 
     try {
+      setSubmitProgress({
+        step: 'pdf_generate',
+        currentPhotoIndex: totalPhotos,
+        totalPhotos: totalPhotos,
+        currentPhotoLabel: 'Compiling Inspection Report...',
+        percent: 85,
+        statusMessage: 'Generating PDF Report...'
+      });
       setSubmitProgressText('GENERATING PDF REPORT...');
+
       const pdfResult = await generateInspectionPdf(tempRecord);
       generatedPdfBase64 = pdfResult.base64;
 
+      setSubmitProgress({
+        step: 'pdf_upload',
+        currentPhotoIndex: totalPhotos,
+        totalPhotos: totalPhotos,
+        currentPhotoLabel: 'Uploading to Google Drive...',
+        percent: 92,
+        statusMessage: 'Uploading PDF to Google Drive...'
+      });
       setSubmitProgressText('UPLOADING PDF TO GOOGLE DRIVE...');
+
       const pdfUploadRes = await uploadPdfToDrive(pdfResult.base64, machineType, activeFormNo);
       if (pdfUploadRes && pdfUploadRes.url) {
         pdfUrl = pdfUploadRes.url;
@@ -550,6 +623,14 @@ export default function App() {
       console.warn('PDF generation/upload notice:', pdfErr);
     }
 
+    setSubmitProgress({
+      step: 'sheet_save',
+      currentPhotoIndex: totalPhotos,
+      totalPhotos: totalPhotos,
+      currentPhotoLabel: 'Writing row to Google Sheet...',
+      percent: 98,
+      statusMessage: 'Saving Record to Google Sheet...'
+    });
     setSubmitProgressText('SAVING TO GOOGLE SHEET...');
 
     // 3. Build structured payload matching Google Sheets (BATTERY / ENGINE sheet)
@@ -626,6 +707,8 @@ export default function App() {
     }
 
     setIsSubmitting(false);
+    setSubmitProgress(null);
+    setSubmitProgressText('');
 
     // Trigger celebratory confetti
     try {
@@ -638,12 +721,21 @@ export default function App() {
       // ignore
     }
 
-    showToast(`Inspection ${confirmedFormNo} submitted successfully!`, 'success');
+    // Keep reference of completed record for notification banner
+    setRecentSubmittedRecord(newRecord);
 
-    // Prompt user to view report or start new
-    setSelectedRecordForReport(newRecord);
+    // Reset Form for brand new entry
     resetFormState();
+
+    // Fetch next real Form No from Google Sheet
+    fetchBackendFormNo(machineType).then((num) => {
+      if (num) setFormNo(num);
+    });
+
+    // Go directly to the very top section to fill in a new form
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    showToast(`Inspection ${confirmedFormNo} submitted successfully! Ready for new inspection.`, 'success');
   };
 
   const deleteInspectionRecord = (id: string) => {
@@ -673,6 +765,42 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-3.5 sm:px-6 py-4 sm:py-6">
 
+        {/* Success Banner from Previous Submission */}
+        {recentSubmittedRecord && (
+          <div className="mb-4 bg-emerald-50 border border-emerald-300 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-in fade-in duration-300">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-xs sm:text-sm font-bold text-emerald-950">
+                  Inspection {recentSubmittedRecord.formNo} Submitted Successfully!
+                </p>
+                <p className="text-[11px] text-emerald-700">
+                  PMA: {recentSubmittedRecord.pmaNumber} ({recentSubmittedRecord.machineType})
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-center">
+              <button
+                type="button"
+                onClick={() => setSelectedRecordForReport(recentSubmittedRecord)}
+                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <FileCheck className="w-3.5 h-3.5" />
+                View Report
+              </button>
+              <button
+                type="button"
+                onClick={() => setRecentSubmittedRecord(null)}
+                className="px-2.5 py-1.5 text-slate-500 hover:text-slate-700 text-xs font-medium cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Primary Form */}
         <form onSubmit={handleSubmit} className="space-y-6" noValidate>
 
@@ -694,7 +822,12 @@ export default function App() {
                 />
               </div>
               <div>
-                <h2 className="text-lg sm:text-xl font-black uppercase tracking-wide">DIGITAL INSPECTION FORM</h2>
+                <h1 className="text-lg sm:text-xl font-black uppercase tracking-wide text-white">
+                  EASYWAY ENGINEERING
+                </h1>
+                <p className="text-xs sm:text-sm font-normal text-slate-200 tracking-wider">
+                  MACHINE INSPECTION FORM
+                </p>
               </div>
             </div>
 
@@ -729,7 +862,7 @@ export default function App() {
               </div>
 
               {/* Type of Inspection */}
-              <div>
+              <div id="field-type-of-inspection" className="rounded-xl transition-all p-1">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Type of Inspection <span className="text-red-500">*</span>
                 </label>
@@ -746,7 +879,7 @@ export default function App() {
               </div>
 
               {/* PMA Search & Autocomplete Input */}
-              <div className="relative" ref={pmaInputContainerRef}>
+              <div id="field-pma-number" className="relative rounded-xl transition-all p-1" ref={pmaInputContainerRef}>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   PMA Number <span className="text-red-500">*</span>
                 </label>
@@ -859,7 +992,7 @@ export default function App() {
 
               {/* Serial Number & Hour Meter */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
+                <div id="field-serial-number" className="rounded-xl transition-all p-1">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Serial Number <span className="text-red-500">*</span>
                   </label>
@@ -877,7 +1010,7 @@ export default function App() {
                   />
                 </div>
 
-                <div>
+                <div id="field-hour-meter" className="rounded-xl transition-all p-1">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Hour Meter <span className="text-red-500">*</span>
                   </label>
@@ -895,7 +1028,7 @@ export default function App() {
 
               {/* Machine Location & Site */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
+                <div id="field-machine-location" className="rounded-xl transition-all p-1">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Machine Location <span className="text-red-500">*</span>
                   </label>
@@ -1018,7 +1151,7 @@ export default function App() {
 
             <div className="p-4 sm:p-6 space-y-4">
               {/* Overall Comment */}
-              <div>
+              <div id="field-overall-comment" className="rounded-xl transition-all p-1">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                   Overall Comment <span className="text-red-500">*</span>
                 </label>
@@ -1034,7 +1167,7 @@ export default function App() {
 
               {/* Status & Inspector Name */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
+                <div id="field-inspection-status" className="rounded-xl transition-all p-1">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                     Inspection Status <span className="text-red-500">*</span>
                   </label>
@@ -1051,7 +1184,7 @@ export default function App() {
                   </select>
                 </div>
 
-                <div>
+                <div id="field-technician-name" className="rounded-xl transition-all p-1">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                     Technician / Inspector Name <span className="text-red-500">*</span>
                   </label>
@@ -1067,7 +1200,7 @@ export default function App() {
 
               {/* Inspection Date & Time */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
+                <div id="field-inspection-date" className="rounded-xl transition-all p-1">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                     Inspection Date <span className="text-red-500">*</span>
                   </label>
@@ -1152,6 +1285,74 @@ export default function App() {
           </div>
         </form>
       </main>
+
+      {/* SUBMISSION PROGRESS OVERLAY MODAL */}
+      {isSubmitting && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-center space-y-5">
+            <div className="mx-auto w-16 h-16 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center shadow-inner">
+              <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-lg font-black text-slate-800 tracking-wide uppercase">
+                SUBMITTING INSPECTION
+              </h3>
+              <p className="text-xs text-slate-500 font-medium">
+                Form No: <span className="font-bold text-slate-800">{formNo || 'Pending'}</span> ({machineType} TYPE)
+              </p>
+            </div>
+
+            {/* Dynamic Progress Indicator Box */}
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-left space-y-3">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
+                <span className="flex items-center gap-1.5 text-blue-700 font-bold">
+                  {submitProgress?.step === 'photo' ? (
+                    <>
+                      <Camera className="w-4 h-4 text-blue-600" />
+                      Uploading Pictures to Drive
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      Processing Submission
+                    </>
+                  )}
+                </span>
+                <span className="bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full font-mono text-xs font-black">
+                  {submitProgress?.step === 'photo'
+                    ? `${submitProgress.currentPhotoIndex} / ${submitProgress.totalPhotos}`
+                    : 'Finalizing'}
+                </span>
+              </div>
+
+              {/* Current photo label or step message */}
+              <div className="bg-white rounded-lg p-2.5 border border-slate-200">
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  {submitProgress?.step === 'photo' ? 'Current Photo:' : 'Status:'}
+                </p>
+                <p className="text-xs font-extrabold text-slate-800 truncate">
+                  {submitProgress?.currentPhotoLabel || submitProgressText || 'Uploading...'}
+                </p>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="space-y-1">
+                <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden shadow-inner">
+                  <div
+                    className="bg-blue-600 h-3 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${Math.max(submitProgress?.percent || 10, 8)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] font-semibold text-slate-400">
+                  <span>Progress</span>
+                  <span>{submitProgress?.percent || 10}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODALS */}
       {/* Lightbox for Photos */}

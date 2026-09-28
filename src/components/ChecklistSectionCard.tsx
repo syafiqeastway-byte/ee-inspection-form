@@ -27,7 +27,10 @@ export const ChecklistSectionCard: React.FC<ChecklistSectionCardProps> = ({
   const hasNotOk = section.items.some((item) => answers[item.name] === 'NOT OK');
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-5 transition-shadow hover:shadow-md">
+    <div
+      id={`checklist-section-${section.id}`}
+      className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-5 transition-all hover:shadow-md"
+    >
       {/* Section Header */}
       <div className="bg-slate-700 text-white px-4 py-3.5 sm:px-6 sm:py-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-600">
         <div className="flex items-center gap-2.5">
@@ -96,6 +99,7 @@ export const ChecklistSectionCard: React.FC<ChecklistSectionCardProps> = ({
                 return (
                   <tr
                     key={item.name}
+                    id={`checklist-item-${item.name}`}
                     className={`transition-colors ${
                       currentStatus === 'NOT OK'
                         ? 'bg-red-50/60 hover:bg-red-50'
@@ -202,6 +206,7 @@ export const ChecklistSectionCard: React.FC<ChecklistSectionCardProps> = ({
             )}
           </label>
           <textarea
+            id={`section-comment-${section.commentName}`}
             value={commentValue || ''}
             onChange={(e) => onCommentChange(section.commentName, e.target.value.toUpperCase())}
             required={section.commentRequired}
