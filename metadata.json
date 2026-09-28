@@ -1,0 +1,6 @@
+{
+  "name": "Eastway Digital Inspection System",
+  "description": "Digital equipment inspection application for scissor lifts and boom lifts across PC, iOS, and Android devices.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
