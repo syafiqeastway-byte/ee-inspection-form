@@ -184,15 +184,12 @@ export default function App() {
     statusMessage: string;
   }
 
-  // Supabase Sync State & Key Modal
-  const [isSupabaseKeyModalOpen, setIsSupabaseKeyModalOpen] = useState(false);
-  const [supabaseAnonKeyInput, setSupabaseAnonKeyInput] = useState('');
+  // Supabase Sync State
   const [supabaseSyncStatus, setSupabaseSyncStatus] = useState<{
     isLoading: boolean;
     count: number;
     source: 'supabase' | 'cache' | 'local';
     error?: string;
-    requiresApiKey?: boolean;
   }>({
     isLoading: false,
     count: 0,
@@ -207,8 +204,7 @@ export default function App() {
         isLoading: false,
         count: res.count,
         source: res.source,
-        error: res.error,
-        requiresApiKey: res.requiresApiKey
+        error: res.error
       });
 
       if (res.data && res.data.length > 0) {
@@ -218,10 +214,6 @@ export default function App() {
       if (showToastNotice) {
         if (res.success) {
           showToast(`Successfully downloaded ${res.count} MEWP machines from Supabase`, 'success');
-        } else if (res.requiresApiKey) {
-          showToast('Supabase REST API requires an API Key (anon key) for external access.', 'warning');
-          setSupabaseAnonKeyInput(getSupabaseAnonKey());
-          setIsSupabaseKeyModalOpen(true);
         } else {
           showToast(`Fleet loaded: ${res.count} records (${res.source}).`, 'info');
         }
@@ -958,22 +950,16 @@ export default function App() {
                         <Loader2 className="w-3 h-3 animate-spin" /> Syncing Supabase...
                       </span>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSupabaseAnonKeyInput(getSupabaseAnonKey());
-                          setIsSupabaseKeyModalOpen(true);
-                        }}
-                        className={`text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 cursor-pointer transition-colors ${
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 ${
                           supabaseSyncStatus.source === 'supabase'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold hover:bg-emerald-100'
-                            : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold'
+                            : 'bg-slate-100 text-slate-700 border-slate-300'
                         }`}
-                        title="Click to configure Supabase Anon API Key"
+                        title="Supabase MEWP FLEET Database"
                       >
-                        <Key className="w-2.5 h-2.5 text-slate-500" />
-                        <span>SUPABASE: {pmaDatabase.length} FLEET</span>
-                      </button>
+                        SUPABASE: {pmaDatabase.length} FLEET
+                      </span>
                     )}
                     <button
                       type="button"
@@ -1498,66 +1484,7 @@ export default function App() {
         onClose={() => setActiveTab('form')}
       />
 
-      {/* Supabase Key Configuration Modal */}
-      {isSupabaseKeyModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Database className="w-5 h-5 text-blue-600" />
-                <h3 className="text-base font-bold text-slate-900">Supabase MEWP FLEET Settings</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsSupabaseKeyModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Endpoint: <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-[11px]">https://rgpkzyqytepatahedsfp.supabase.co/rest/v1/MEWP FLEET</code>
-              <br />
-              Enter <strong>Supabase Anon API Key</strong> to download all 656 MEWP machine records from Supabase.
-            </p>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase block">
-                Supabase Anon API Key
-              </label>
-              <input
-                type="text"
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                value={supabaseAnonKeyInput}
-                onChange={(e) => setSupabaseAnonKeyInput(e.target.value)}
-                className="w-full px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsSupabaseKeyModalOpen(false)}
-                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  setSupabaseAnonKey(supabaseAnonKeyInput);
-                  setIsSupabaseKeyModalOpen(false);
-                  await syncSupabaseFleet(true);
-                }}
-                className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold rounded-lg shadow transition-colors"
-              >
-                Save & Sync 656 Fleet
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Toast System */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />

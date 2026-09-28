@@ -5,6 +5,9 @@ import { INITIAL_PMA_DATABASE, savePmaDatabase } from '../data/pmaDatabase';
 export const DEFAULT_SUPABASE_FLEET_URL =
   'https://rgpkzyqytepatahedsfp.supabase.co/rest/v1/MEWP%20FLEET';
 
+export const DEFAULT_SUPABASE_ANON_KEY =
+  'sb_publishable_HhufO6p-mEKEhKE2lHPeaA_Mz1XPe3H';
+
 export interface SupabaseSyncResult {
   success: boolean;
   count: number;
@@ -18,7 +21,7 @@ const LOCAL_STORAGE_SUPABASE_FLEET_KEY = 'eastway_supabase_mewp_fleet_v1';
 const LOCAL_STORAGE_SUPABASE_KEY = 'eastway_supabase_anon_key';
 
 /**
- * Retrieves the Supabase Anon / API Key from environment or localStorage
+ * Retrieves the Supabase Anon / API Key from environment, localStorage or default publish key
  */
 export function getSupabaseAnonKey(): string {
   // 1. From Vite env vars (ignore placeholder text)
@@ -35,7 +38,8 @@ export function getSupabaseAnonKey(): string {
     if (stored && stored.trim()) return stored.trim();
   }
 
-  return '';
+  // 3. Fallback to default user publish key
+  return DEFAULT_SUPABASE_ANON_KEY;
 }
 
 /**
