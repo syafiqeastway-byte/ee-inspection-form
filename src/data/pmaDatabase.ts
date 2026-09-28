@@ -130,7 +130,34 @@ export function savePmaDatabase(list: PmaRecord[]) {
 export function searchPma(query: string, currentDatabase: PmaRecord[] = getStoredPmaDatabase()): PmaRecord | undefined {
   const cleanQuery = query.trim().toUpperCase();
   if (!cleanQuery) return undefined;
-  return currentDatabase.find(
-    (item) => item.pmaNumber.toUpperCase() === cleanQuery || item.pmaNumber.replace(/\s+/g, '').toUpperCase() === cleanQuery.replace(/\s+/g, '')
+  const noSpaceQuery = cleanQuery.replace(/\s+/g, '');
+
+  // 1. Exact match or space-insensitive match
+  const exact = currentDatabase.find(
+    (item) =>
+      item.pmaNumber.toUpperCase() === cleanQuery ||
+      item.pmaNumber.replace(/\s+/g, '').toUpperCase() === noSpaceQuery
   );
+  if (exact) return exact;
+
+  // 2. Number-only match if query has digits (e.g. typing "10243" matches "PMA 10243")
+  const queryDigits = cleanQuery.replace(/\D/g, '');
+  if (queryDigits.length >= 3) {
+    const digitMatch = currentDatabase.find((item) => {
+      const itemDigits = item.pmaNumber.replace(/\D/g, '');
+      return itemDigits === queryDigits;
+    });
+    if (digitMatch) return digitMatch;
+  }
+
+  // 3. Prefix match with "PMA "
+  if (!cleanQuery.startsWith('PMA')) {
+    const withPma = `PMA ${cleanQuery}`.replace(/\s+/g, '');
+    const prefixMatch = currentDatabase.find(
+      (item) => item.pmaNumber.replace(/\s+/g, '').toUpperCase() === withPma
+    );
+    if (prefixMatch) return prefixMatch;
+  }
+
+  return undefined;
 }

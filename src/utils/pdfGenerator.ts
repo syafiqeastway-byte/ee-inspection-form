@@ -318,8 +318,8 @@ export async function generateInspectionPdf(record: SavedInspectionRecord): Prom
     y += imgHeight + 14;
   }
 
-  // 5. Overall Assessment & Sign-Off Section
-  checkPageBreak(42);
+  // 5. Overall Assessment & Sign-Off Section (Structured Table Format)
+  checkPageBreak(50);
   doc.setFillColor(241, 245, 249);
   doc.rect(margin, y, contentWidth, 7, 'F');
   doc.setDrawColor(203, 213, 225);
@@ -329,60 +329,161 @@ export async function generateInspectionPdf(record: SavedInspectionRecord): Prom
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.text('4. OVERALL ASSESSMENT & SIGN-OFF', margin + 3, y + 4.8);
-  y += 10;
+  y += 7;
 
-  // Status Box Table
+  // Table Columns Widths
+  const labelColWidth = 52;
+  const valueColWidth = contentWidth - labelColWidth; // 134mm
+
+  // Table Header Row
+  doc.setFillColor(51, 65, 85); // Slate 700
+  doc.rect(margin, y, contentWidth, 6, 'F');
+  doc.setDrawColor(203, 213, 225);
+  doc.rect(margin, y, contentWidth, 6, 'S');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.text('ASSESSMENT CRITERIA / PARAMETER', margin + 4, y + 4.2);
+  doc.text('VERIFICATION DETAILS / STATUS', margin + labelColWidth + 4, y + 4.2);
+  y += 6;
+
   const statusStr = (record.inspectionStatus || 'PASS').toUpperCase().trim();
   const isFailed = statusStr === 'FAILED';
   const isFailedMisuse = statusStr === 'FAILED & MISUSE' || statusStr === 'FAILED AND MISUSE';
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(71, 85, 105);
-  doc.text('Overall Inspection Status:', margin + 3, y);
+  // Helper to draw a row with label column and value column
+  const drawTableRow = (
+    label: string,
+    rowHeight: number,
+    renderValue: (x: number, yPos: number, width: number, height: number) => void
+  ) => {
+    checkPageBreak(rowHeight + 2);
 
-  if (isFailed) {
-    // TULISAN MERAH BAGI FAILED
-    doc.setTextColor(220, 38, 38);
-    doc.text('FAILED', margin + 46, y);
-  } else if (isFailedMisuse) {
-    // TULISAN MERAH BAGI FAILED AND MISUSE
-    doc.setTextColor(220, 38, 38);
-    doc.text('FAILED & MISUSE', margin + 46, y);
-  } else {
-    // GREEN FOR PASS
-    doc.setTextColor(22, 163, 74);
-    doc.text('PASS', margin + 46, y);
-  }
-  y += 6.5;
+    // Label cell background (Slate 50)
+    doc.setFillColor(248, 250, 252);
+    doc.rect(margin, y, labelColWidth, rowHeight, 'F');
 
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Inspector / Technician:', margin + 3, y);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(15, 23, 42);
-  doc.text(record.technicianName || '-', margin + 46, y);
-  y += 6.5;
+    // Value cell background (White)
+    doc.setFillColor(255, 255, 255);
+    doc.rect(margin + labelColWidth, y, valueColWidth, rowHeight, 'F');
 
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Date & Time of Sign-off:', margin + 3, y);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(15, 23, 42);
-  doc.text(`${record.inspectionDate} at ${record.inspectionTime}`, margin + 46, y);
-  y += 6.5;
+    // Outer and separator borders
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(margin, y, contentWidth, rowHeight, 'S');
+    doc.line(margin + labelColWidth, y, margin + labelColWidth, y + rowHeight);
 
-  if (record.overallComment) {
+    // Draw label
     doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
     doc.setTextColor(71, 85, 105);
-    doc.text('Overall Remarks:', margin + 3, y);
-    y += 4.5;
-    doc.setFont('helvetica', 'normal');
+    doc.text(label, margin + 4, y + (rowHeight > 10 ? 6 : 4.5));
+
+    // Render value
+    renderValue(margin + labelColWidth, y, valueColWidth, rowHeight);
+
+    y += rowHeight;
+  };
+
+  // Row 1: Overall Inspection Status
+  drawTableRow('Overall Inspection Status', 8, (x, yPos) => {
+    if (isFailed) {
+      doc.setFillColor(254, 242, 242);
+      doc.rect(x + 3, yPos + 1.5, 28, 5, 'F');
+      doc.setDrawColor(252, 165, 165);
+      doc.rect(x + 3, yPos + 1.5, 28, 5, 'S');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(220, 38, 38);
+      doc.text('FAILED', x + 5, yPos + 5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(185, 28, 28);
+      doc.text('- Machine requires repair / rectifications', x + 35, yPos + 5);
+    } else if (isFailedMisuse) {
+      doc.setFillColor(254, 242, 242);
+      doc.rect(x + 3, yPos + 1.5, 46, 5, 'F');
+      doc.setDrawColor(252, 165, 165);
+      doc.rect(x + 3, yPos + 1.5, 46, 5, 'S');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(220, 38, 38);
+      doc.text('FAILED & MISUSE', x + 5, yPos + 5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(185, 28, 28);
+      doc.text('- Misuse reported / Rectification required', x + 53, yPos + 5);
+    } else {
+      doc.setFillColor(240, 253, 244);
+      doc.rect(x + 3, yPos + 1.5, 22, 5, 'F');
+      doc.setDrawColor(187, 247, 208);
+      doc.rect(x + 3, yPos + 1.5, 22, 5, 'S');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(22, 163, 74);
+      doc.text('PASS', x + 5, yPos + 5);
+    }
+  });
+
+  // Row 2: Inspector / Technician
+  drawTableRow('Inspector / Technician', 7, (x, yPos) => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
     doc.setTextColor(15, 23, 42);
-    const splitComments = doc.splitTextToSize(record.overallComment, contentWidth - 6);
-    doc.text(splitComments, margin + 3, y);
-    y += splitComments.length * 4.5;
-  }
+    doc.text(record.technicianName || '-', x + 4, yPos + 4.5);
+  });
+
+  // Row 3: Date & Time of Sign-off
+  drawTableRow('Date & Time of Sign-off', 7, (x, yPos) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${record.inspectionDate} at ${record.inspectionTime}`, x + 4, yPos + 4.5);
+  });
+
+  // Row 4: Digital Signature
+  const hasSignature = !!(record.signatureDataUrl && record.signatureDataUrl.startsWith('data:image'));
+  const sigRowHeight = hasSignature ? 22 : 7.5;
+  drawTableRow('Digital Signature', sigRowHeight, (x, yPos) => {
+    if (hasSignature && record.signatureDataUrl) {
+      try {
+        doc.addImage(record.signatureDataUrl, 'PNG', x + 4, yPos + 2, 42, 17, undefined, 'FAST');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.text(`Digitally signed by: ${record.technicianName || 'Inspector'}`, x + 50, yPos + 9);
+        doc.text(`Timestamp: ${record.inspectionDate} ${record.inspectionTime}`, x + 50, yPos + 13.5);
+      } catch (err) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(71, 85, 105);
+        doc.text('-', x + 4, yPos + 4.5);
+      }
+    } else {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text('-', x + 4, yPos + 4.8);
+    }
+  });
+
+  // Row 5: Overall Remarks / Comments
+  const remarksText = record.overallComment?.trim() || 'None / Tiada catatan kerosakan atau ulasan tambahan.';
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  const splitRemarks = doc.splitTextToSize(remarksText, valueColWidth - 8);
+  const remarksRowHeight = Math.max(8.5, splitRemarks.length * 4 + 4.5);
+
+  drawTableRow('Overall Remarks', remarksRowHeight, (x, yPos) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(record.overallComment ? 15 : 100, record.overallComment ? 23 : 116, record.overallComment ? 42 : 139);
+    doc.text(splitRemarks, x + 4, yPos + 4.5);
+  });
 
   // Footer Page Numbers
   const totalPages = (doc as any).internal.getNumberOfPages();

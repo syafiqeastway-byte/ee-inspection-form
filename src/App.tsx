@@ -17,7 +17,8 @@ import {
   RotateCcw,
   Search,
   ChevronDown,
-  PlusCircle
+  PlusCircle,
+  RefreshCw
 } from 'lucide-react';
 
 import {
@@ -42,6 +43,8 @@ import {
   savePmaDatabase,
   searchPma
 } from './data/pmaDatabase';
+
+import { fetchSupabaseMewpFleet, SupabaseSyncResult } from './services/supabaseFleet';
 
 import {
   generateNextFormNumber,
@@ -71,6 +74,55 @@ import { ManualsViewerModal } from './components/ManualsViewerModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 
 const LOCAL_STORAGE_INSPECTIONS_KEY = 'eastway_inspections_history_v1';
+
+/**
+ * Safely saves inspection history to localStorage with progressive quota pruning.
+ * Prevents 'QuotaExceededError' when saving records with large base64 PDFs or photo assets.
+ */
+function saveInspectionsToLocalStorage(historyList: SavedInspectionRecord[]): void {
+  const trySave = (data: SavedInspectionRecord[]): boolean => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_INSPECTIONS_KEY, JSON.stringify(data));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // 1. Try full history save
+  if (trySave(historyList)) return;
+
+  // 2. Keep pdfBase64 ONLY on the newest submission (idx 0), strip pdfBase64 from older ones
+  const pruneOldPdfs = historyList.map((item, idx) => {
+    if (idx >= 1 && item.pdfBase64) {
+      const { pdfBase64, ...rest } = item;
+      return rest as SavedInspectionRecord;
+    }
+    return item;
+  });
+  if (trySave(pruneOldPdfs)) return;
+
+  // 3. Strip pdfBase64 from all records in history
+  const pruneAllPdfs = historyList.map((item) => {
+    if (item.pdfBase64) {
+      const { pdfBase64, ...rest } = item;
+      return rest as SavedInspectionRecord;
+    }
+    return item;
+  });
+  if (trySave(pruneAllPdfs)) return;
+
+  // 4. Limit history to latest 30 items
+  const recent30 = pruneAllPdfs.slice(0, 30);
+  if (trySave(recent30)) return;
+
+  // 5. Limit history to latest 15 items without heavy photo base64 payloads
+  const lightHistory = recent30.slice(0, 15).map((item) => ({
+    ...item,
+    photos: {}
+  }));
+  trySave(lightHistory);
+}
 
 export default function App() {
   // Current active date and time
@@ -130,6 +182,49 @@ export default function App() {
     statusMessage: string;
   }
 
+  // Supabase Sync State
+  const [supabaseSyncStatus, setSupabaseSyncStatus] = useState<{
+    isLoading: boolean;
+    count: number;
+    source: 'supabase' | 'cache' | 'local';
+    error?: string;
+    requiresApiKey?: boolean;
+  }>({
+    isLoading: false,
+    count: 0,
+    source: 'local'
+  });
+
+  const syncSupabaseFleet = async (showToastNotice = false) => {
+    setSupabaseSyncStatus((prev) => ({ ...prev, isLoading: true }));
+    try {
+      const res: SupabaseSyncResult = await fetchSupabaseMewpFleet();
+      setSupabaseSyncStatus({
+        isLoading: false,
+        count: res.count,
+        source: res.source,
+        error: res.error,
+        requiresApiKey: res.requiresApiKey
+      });
+
+      if (res.data && res.data.length > 0) {
+        setPmaDatabase(res.data);
+      }
+
+      if (showToastNotice) {
+        if (res.success) {
+          showToast(`Berjaya memuat turun ${res.count} mesin MEWP dari Supabase`, 'success');
+        } else if (res.requiresApiKey) {
+          showToast('Supabase REST API memerlukan API Key (anon key) untuk capaian luar.', 'warning');
+        } else {
+          showToast(`Armada dimuat: ${res.count} rekod (${res.source}).`, 'info');
+        }
+      }
+    } catch (e: any) {
+      setSupabaseSyncStatus((prev) => ({ ...prev, isLoading: false, error: e?.message }));
+    }
+  };
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitProgressText, setSubmitProgressText] = useState('');
   const [submitProgress, setSubmitProgress] = useState<SubmitProgressState | null>(null);
@@ -150,6 +245,9 @@ export default function App() {
     const dbs = getStoredPmaDatabase();
     setPmaDatabase(dbs);
 
+    // Sync PMA fleet data directly from Supabase REST API (https://rgpkzyqytepatahedsfp.supabase.co/rest/v1/MEWP FLEET)
+    syncSupabaseFleet(false);
+
     // Load Inspection History
     try {
       const rawHistory = localStorage.getItem(LOCAL_STORAGE_INSPECTIONS_KEY);
@@ -162,9 +260,6 @@ export default function App() {
     } catch (e) {
       console.error('Failed to load inspection history', e);
     }
-
-    // Set initial form number from Google Sheet BATTERY sheet
-    fetchBackendFormNo('BATTERY').then((num) => setFormNo(num));
 
     return () => clearInterval(timer);
   }, []);
@@ -215,30 +310,11 @@ export default function App() {
     setPmaNumber(pmaItem.pmaNumber);
     setPmaDropdownOpen(false);
 
-    if (pmaItem.brand && pmaItem.model && pmaItem.serial) {
-      setBrand(pmaItem.brand);
-      setModel(pmaItem.model);
-      setSerial(pmaItem.serial);
-      if (pmaItem.type && pmaItem.type !== machineType) {
-        setMachineType(pmaItem.type);
-      }
-      setIsPmaAutoFilled(true);
-      showToast(`Machine details loaded for ${pmaItem.pmaNumber}`, 'info');
-    } else {
-      const res = await searchBackendPmaNumber(pmaItem.pmaNumber);
-      if (res.found && res.brand) {
-        setBrand(res.brand);
-        setModel(res.model || '');
-        setSerial(res.serial || '');
-        if (res.type && res.type !== machineType) {
-          setMachineType(res.type);
-        }
-        setIsPmaAutoFilled(true);
-        showToast(`Machine details loaded for ${pmaItem.pmaNumber}`, 'info');
-      } else {
-        setIsPmaAutoFilled(false);
-      }
-    }
+    setBrand(pmaItem.brand || '');
+    setModel(pmaItem.model || '');
+    setSerial(pmaItem.serial || '');
+    setIsPmaAutoFilled(true);
+    showToast(`Machine details loaded: ${pmaItem.pmaNumber}`, 'info');
   };
 
   const handlePmaInputChange = async (val: string) => {
@@ -252,23 +328,17 @@ export default function App() {
     }
 
     const found = searchPma(upper, pmaDatabase);
-    if (found && found.brand) {
-      setBrand(found.brand);
-      setModel(found.model);
-      setSerial(found.serial);
-      if (found.type !== machineType) {
-        setMachineType(found.type);
-      }
+    if (found) {
+      setBrand(found.brand || '');
+      setModel(found.model || '');
+      setSerial(found.serial || '');
       setIsPmaAutoFilled(true);
     } else {
       const res = await searchBackendPmaNumber(upper);
-      if (res.found && res.brand) {
-        setBrand(res.brand);
+      if (res.found) {
+        setBrand(res.brand || '');
         setModel(res.model || '');
         setSerial(res.serial || '');
-        if (res.type && res.type !== machineType) {
-          setMachineType(res.type);
-        }
         setIsPmaAutoFilled(true);
       } else {
         setIsPmaAutoFilled(false);
@@ -553,7 +623,7 @@ export default function App() {
       const base64Data = pictures[cfg.key];
       if (base64Data) {
         try {
-          const res = await uploadSingleImageToDrive(base64Data, cfg.key, pmaNumber);
+          const res = await uploadSingleImageToDrive(base64Data, cfg.key, pmaNumber, photoIdx, inspectionDate);
           uploadedUrlMap[cfg.key] = res.url || base64Data;
         } catch (uploadErr: any) {
           console.error(`Image upload error for ${cfg.key}:`, uploadErr);
@@ -678,14 +748,10 @@ export default function App() {
       pdfBase64: generatedPdfBase64
     };
 
-    // Save to localStorage history
+    // Save to localStorage history safely with quota management
     const updatedHistory = [newRecord, ...savedInspections];
     setSavedInspections(updatedHistory);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_INSPECTIONS_KEY, JSON.stringify(updatedHistory));
-    } catch (err) {
-      console.warn('LocalStorage quota limit warning:', err);
-    }
+    saveInspectionsToLocalStorage(updatedHistory);
 
     // Increment counter for next form
     incrementFormCounter(machineType);
@@ -741,11 +807,7 @@ export default function App() {
   const deleteInspectionRecord = (id: string) => {
     const filtered = savedInspections.filter((r) => r.id !== id);
     setSavedInspections(filtered);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_INSPECTIONS_KEY, JSON.stringify(filtered));
-    } catch (e) {
-      console.error(e);
-    }
+    saveInspectionsToLocalStorage(filtered);
     showToast('Record deleted from local storage', 'info');
   };
 
@@ -880,9 +942,37 @@ export default function App() {
 
               {/* PMA Search & Autocomplete Input */}
               <div id="field-pma-number" className="relative rounded-xl transition-all p-1" ref={pmaInputContainerRef}>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  PMA Number <span className="text-red-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    PMA Number <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {supabaseSyncStatus.isLoading ? (
+                      <span className="text-[10px] text-blue-600 flex items-center gap-1 font-semibold animate-pulse">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Syncing Supabase...
+                      </span>
+                    ) : (
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 ${
+                          supabaseSyncStatus.source === 'supabase'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}
+                        title="MEWP FLEET Database"
+                      >
+                        SUPABASE: {pmaDatabase.length} FLEET
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => syncSupabaseFleet(true)}
+                      className="p-1 hover:text-blue-600 text-slate-400 transition-colors cursor-pointer"
+                      title="Sync from Supabase MEWP FLEET"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${supabaseSyncStatus.isLoading ? 'animate-spin text-blue-600' : ''}`} />
+                    </button>
+                  </div>
+                </div>
 
                 <div className="relative">
                   <input
@@ -923,12 +1013,14 @@ export default function App() {
                         onClick={() => handlePmaSelect(item)}
                         className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50 active:bg-blue-100 transition-colors flex items-center justify-between text-xs group"
                       >
-                        <span className="font-bold text-blue-900 group-hover:text-blue-700">{item.pmaNumber}</span>
-                        {item.model && (
-                          <span className="text-slate-600 font-semibold text-xs">
+                        <span className="font-bold text-blue-900 group-hover:text-blue-700 text-xs sm:text-sm">
+                          {item.pmaNumber}
+                        </span>
+                        {item.model ? (
+                          <span className="text-slate-700 font-semibold text-xs bg-slate-100 group-hover:bg-blue-100 px-2 py-0.5 rounded transition-colors">
                             {item.model}
                           </span>
-                        )}
+                        ) : null}
                       </button>
                     ))}
                   </div>

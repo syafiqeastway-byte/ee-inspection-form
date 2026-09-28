@@ -17,12 +17,17 @@ export const DRIVE_BATTERY_PDF_FOLDER_ID = '1h7uOhq76kforMFskOmI3w6OI-dbUFBbp';
 export const DRIVE_ENGINE_PDF_FOLDER_ID = '1h5R0mlozLV76MrL9fb4mZzf8Xap6hOv8';
 
 export const DEFAULT_APPS_SCRIPT_URL =
-  'https://script.google.com/macros/s/AKfycbwg3mNH3xYeeaMlsTdR-YYp4jCA1eZyghSl411kcNXCIbDUrHwaJTjB86MHX-rAFfPW/exec';
+  'https://script.google.com/macros/s/AKfycbxWHZqtd22rhJqs0BQNxTq8DKl5kCWMqubPYzW7E7n_7WQxmKqVESTTOzo28PwVJwny/exec';
 
 // Configurable Webhook URL for Google Apps Script Web App Deployment
 export function getAppsScriptUrl(): string {
   if (typeof window !== 'undefined') {
     const local = localStorage.getItem('eastway_apps_script_url');
+    // If user has old default cached in localStorage, automatically upgrade to new URL
+    if (local && (local.includes('AKfycbwg3mNH3xYeeaMlsTdR') || local.trim() === '')) {
+      localStorage.setItem('eastway_apps_script_url', DEFAULT_APPS_SCRIPT_URL);
+      return DEFAULT_APPS_SCRIPT_URL;
+    }
     if (local && local.trim()) return local.trim();
   }
   const envUrl = ((import.meta as any).env?.VITE_APPS_SCRIPT_URL || '').trim();
@@ -224,15 +229,36 @@ export async function searchBackendPmaNumber(
 
 /**
  * Uploads a single image to Google Drive folder (ID: 1qFBW8DG4zGiKiYEpmpN5be8n7lMWE8wC)
+ * Filename format: {month}-{year}-{sequence} (e.g. 9-26-1, 9-26-2)
  */
 export async function uploadSingleImageToDrive(
   base64Raw: string,
   fieldKey: string,
-  pmaNumber: string
+  pmaNumber: string,
+  photoIndex: number = 1,
+  inspectionDateStr?: string
 ): Promise<{ success: boolean; url?: string; filename?: string; error?: string }> {
   if (!base64Raw) {
     return { success: true, url: '' };
   }
+
+  // Format custom filename as month-year-sequence (e.g., 9-26-1, 9-26-2)
+  let dateObj = new Date();
+  if (inspectionDateStr) {
+    const parts = inspectionDateStr.split('-');
+    if (parts.length === 3) {
+      // Expect YYYY-MM-DD
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parseInt(parts[2], 10);
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        dateObj = new Date(y, m, d);
+      }
+    }
+  }
+  const month = dateObj.getMonth() + 1; // 1-12 without leading zero
+  const shortYear = String(dateObj.getFullYear()).slice(-2); // e.g., '26'
+  const customFilename = `${month}-${shortYear}-${photoIndex}`;
 
   // 1. If embedded in Google Apps Script HtmlService
   if (hasGoogleScriptRun()) {
@@ -249,7 +275,7 @@ export async function uploadSingleImageToDrive(
           .withFailureHandler((err: any) => {
             reject(new Error(err?.message || String(err)));
           })
-          .uploadSingleImageToDrive(base64Raw, fieldKey, pmaNumber);
+          .uploadSingleImageToDrive(base64Raw, fieldKey, pmaNumber, customFilename);
       });
     } catch (e: any) {
       console.warn('Apps Script run upload failed:', e);
@@ -268,6 +294,9 @@ export async function uploadSingleImageToDrive(
           base64Data: base64Raw,
           fieldKey,
           pmaNumber,
+          filename: customFilename,
+          customFilename: customFilename,
+          photoIndex,
           folderId: DRIVE_PHOTO_FOLDER_ID
         })
       });
@@ -281,7 +310,7 @@ export async function uploadSingleImageToDrive(
   }
 
   // 3. Fallback: keep base64 locally so user does not lose photos
-  return { success: true, url: base64Raw };
+  return { success: true, url: base64Raw, filename: customFilename };
 }
 
 /**
