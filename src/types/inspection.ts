@@ -59,4 +59,6 @@ export interface InspectionFormData {
 export interface SavedInspectionRecord extends InspectionFormData {
   id: string;
   submittedAt: string;
+  pdfUrl?: string;
+  pdfBase64?: string;
 }

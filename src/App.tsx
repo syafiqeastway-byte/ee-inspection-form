@@ -53,14 +53,13 @@ import {
   fetchBackendPmaList,
   searchBackendPmaNumber,
   uploadSingleImageToDrive,
-  saveInspectionToBackend,
-  hasGoogleScriptRun
+  uploadPdfToDrive,
+  saveInspectionToGoogleSheet,
+  hasGoogleScriptRun,
+  SPREADSHEET_ID
 } from './services/backendApi';
 
-import {
-  fetchAllPmaFromSupabase,
-  searchPmaFromSupabase
-} from './services/supabasePmaService';
+import { generateInspectionPdf } from './utils/pdfGenerator';
 
 import { ChecklistSectionCard } from './components/ChecklistSectionCard';
 import { PhotoCaptureCard } from './components/PhotoCaptureCard';
@@ -140,13 +139,6 @@ export default function App() {
     const dbs = getStoredPmaDatabase();
     setPmaDatabase(dbs);
 
-    // Fetch live MEWP Fleet database from Supabase
-    fetchAllPmaFromSupabase().then((supabaseFleet) => {
-      if (supabaseFleet && supabaseFleet.length > 0) {
-        setPmaDatabase(supabaseFleet);
-      }
-    });
-
     // Load Inspection History
     try {
       const rawHistory = localStorage.getItem(LOCAL_STORAGE_INSPECTIONS_KEY);
@@ -160,13 +152,13 @@ export default function App() {
       console.error('Failed to load inspection history', e);
     }
 
-    // Set initial form number from Google Sheet Column A
+    // Set initial form number from Google Sheet BATTERY sheet
     fetchBackendFormNo('BATTERY').then((num) => setFormNo(num));
 
     return () => clearInterval(timer);
   }, []);
 
-  // Sync Form Number when Machine Type switches from Google Sheet Column A
+  // Sync Form Number when Machine Type switches from Google Sheet (BATTERY / ENGINE sheet last row)
   useEffect(() => {
     setFormNo('Loading Form No...');
     fetchBackendFormNo(machineType).then((num) => {
@@ -222,8 +214,7 @@ export default function App() {
       setIsPmaAutoFilled(true);
       showToast(`Machine details loaded for ${pmaItem.pmaNumber}`, 'info');
     } else {
-      // Search remote Supabase MEWP FLEET
-      const res = await searchPmaFromSupabase(pmaItem.pmaNumber);
+      const res = await searchBackendPmaNumber(pmaItem.pmaNumber);
       if (res.found && res.brand) {
         setBrand(res.brand);
         setModel(res.model || '');
@@ -259,7 +250,7 @@ export default function App() {
       }
       setIsPmaAutoFilled(true);
     } else {
-      const res = await searchPmaFromSupabase(upper);
+      const res = await searchBackendPmaNumber(upper);
       if (res.found && res.brand) {
         setBrand(res.brand);
         setModel(res.model || '');
@@ -274,7 +265,7 @@ export default function App() {
     }
   };
 
-  // Filtered list for PMA Autocomplete Dropdown - Show ALL items from Supabase database
+  // Filtered list for PMA Autocomplete Dropdown - Show ALL items from PMA database
   const matchingPmas = useMemo(() => {
     if (!pmaNumber.trim()) return pmaDatabase;
     const query = pmaNumber.trim().toUpperCase();
@@ -516,44 +507,15 @@ export default function App() {
       // Continue with local preview if offline
     }
 
-    setSubmitProgressText('SAVING INSPECTION DATA...');
+    const activeFormNo = (formNo && formNo !== 'Loading Form No...') ? formNo : generateNextFormNumber(machineType);
 
-    // 2. Build flat payload matching Google Apps Script saveInspectionData contract
-    const formObj: Record<string, any> = {
-      machineType,
-      formNo: formNo || generateNextFormNumber(machineType),
-      typeOfInspection,
-      pmaNumber: pmaNumber.trim().toUpperCase(),
-      brand: brand.trim().toUpperCase(),
-      model: model.trim().toUpperCase(),
-      serial: serial.trim().toUpperCase(),
-      hourMeter,
-      machineLocation,
-      siteLocation: siteLocation ? siteLocation.trim().toUpperCase() : 'NA',
-      ...checklistAnswers,
-      ...sectionComments,
-      overall_comment: overallComment.trim().toUpperCase(),
-      inspection_status: inspectionStatus,
-      technician_name: technicianName.trim().toUpperCase(),
-      inspection_date: inspectionDate,
-      inspection_time: inspectionTime
-    };
+    // 2. Generate PDF Document & Upload to Google Drive (Battery / Engine Folder)
+    let pdfUrl = '';
+    let generatedPdfBase64 = '';
 
-    let confirmedFormNo = formObj.formNo;
-
-    try {
-      const saveRes = await saveInspectionToBackend(formObj, uploadedUrlMap);
-      if (saveRes && saveRes.formNo) {
-        confirmedFormNo = saveRes.formNo;
-      }
-    } catch (saveErr: any) {
-      console.warn('Backend save error:', saveErr);
-      showToast(`Warning saving to server: ${saveErr.message || saveErr}`, 'warning');
-    }
-
-    const newRecord: SavedInspectionRecord = {
+    const tempRecord: SavedInspectionRecord = {
       id: 'insp_' + Date.now().toString(36),
-      formNo: confirmedFormNo,
+      formNo: activeFormNo,
       machineType,
       typeOfInspection,
       pmaNumber: pmaNumber.trim().toUpperCase(),
@@ -572,6 +534,67 @@ export default function App() {
       inspectionDate,
       inspectionTime,
       submittedAt: new Date().toLocaleString()
+    };
+
+    try {
+      setSubmitProgressText('GENERATING PDF REPORT...');
+      const pdfResult = await generateInspectionPdf(tempRecord);
+      generatedPdfBase64 = pdfResult.base64;
+
+      setSubmitProgressText('UPLOADING PDF TO GOOGLE DRIVE...');
+      const pdfUploadRes = await uploadPdfToDrive(pdfResult.base64, machineType, activeFormNo);
+      if (pdfUploadRes && pdfUploadRes.url) {
+        pdfUrl = pdfUploadRes.url;
+      }
+    } catch (pdfErr) {
+      console.warn('PDF generation/upload notice:', pdfErr);
+    }
+
+    setSubmitProgressText('SAVING TO GOOGLE SHEET...');
+
+    // 3. Build structured payload matching Google Sheets (BATTERY / ENGINE sheet)
+    const inspectionPayload = {
+      machineType,
+      formNo: activeFormNo,
+      typeOfInspection,
+      pmaNumber: pmaNumber.trim().toUpperCase(),
+      brand: brand.trim().toUpperCase(),
+      model: model.trim().toUpperCase(),
+      serial: serial.trim().toUpperCase(),
+      hourMeter,
+      machineLocation,
+      siteLocation: siteLocation ? siteLocation.trim().toUpperCase() : 'NA',
+      checklistAnswers,
+      sectionComments,
+      pictures: uploadedUrlMap,
+      pdfUrl,
+      overallComment: overallComment.trim().toUpperCase(),
+      inspectionStatus,
+      technicianName: technicianName.trim().toUpperCase(),
+      inspectionDate,
+      inspectionTime
+    };
+
+    let confirmedFormNo = inspectionPayload.formNo;
+
+    try {
+      const saveRes = await saveInspectionToGoogleSheet(inspectionPayload);
+      if (saveRes && saveRes.success) {
+        if (saveRes.formNo) confirmedFormNo = saveRes.formNo;
+        showToast(`Record ${confirmedFormNo} & PDF saved to Google Sheet!`, 'success');
+      } else if (saveRes && saveRes.error) {
+        showToast(`Saved locally. Notice: ${saveRes.error}`, 'warning');
+      }
+    } catch (saveErr: any) {
+      console.warn('Google Sheet save error:', saveErr);
+      showToast(`Saved locally. Notice: ${saveErr.message || saveErr}`, 'warning');
+    }
+
+    const newRecord: SavedInspectionRecord = {
+      ...tempRecord,
+      formNo: confirmedFormNo,
+      pdfUrl,
+      pdfBase64: generatedPdfBase64
     };
 
     // Save to localStorage history
@@ -987,39 +1010,7 @@ export default function App() {
             ))}
           </div>
 
-          {/* CARD 4: PICTURES UPLOAD SECTION */}
-          <div id="pictures-section" className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="bg-slate-700 text-white px-5 py-3.5 border-b border-slate-600">
-              <h3 className="text-sm sm:text-base font-bold uppercase tracking-wide">
-                {machineType} TYPE - PICTURES SECTION
-              </h3>
-            </div>
-
-            <div className="p-4 sm:p-6">
-              <p className="text-xs sm:text-sm text-slate-600 mb-4">
-                Please upload all required photos for this machine type before submitting.
-              </p>
-
-              {/* Photo Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {currentPictureConfigs.map((cfg) => (
-                  <PhotoCaptureCard
-                    key={cfg.key}
-                    fieldKey={cfg.key}
-                    label={cfg.label}
-                    required={cfg.required}
-                    hint={cfg.hint}
-                    imageValue={pictures[cfg.key]}
-                    onImageChange={handlePictureChange}
-                    onImageRemove={handlePictureRemove}
-                    onPreview={handlePicturePreview}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* CARD 5: OVERALL SIGN-OFF */}
+          {/* CARD 4: OVERALL & SIGN-OFF (Directly below OTHERS section) */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-700 text-white px-5 py-3.5">
               <h3 className="text-sm sm:text-base font-bold uppercase tracking-wide">OVERALL & SIGN-OFF</h3>
@@ -1107,25 +1098,57 @@ export default function App() {
                   />
                 </div>
               </div>
+            </div>
+          </div>
 
-              {/* Main Submit Button */}
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full py-3.5 px-6 bg-blue-700 hover:bg-blue-800 active:bg-blue-900 text-white font-bold text-base sm:text-lg rounded-xl shadow-md transition-all flex items-center justify-center gap-3 disabled:opacity-75 disabled:cursor-not-allowed touch-manipulation"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin text-white" />
-                      <span>{submitProgressText || 'SUBMITTING INSPECTION...'}</span>
-                    </>
-                  ) : (
-                    <span>SUBMIT INSPECTION</span>
-                  )}
-                </button>
+          {/* CARD 5: PICTURES UPLOAD SECTION */}
+          <div id="pictures-section" className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-slate-700 text-white px-5 py-3.5 border-b border-slate-600">
+              <h3 className="text-sm sm:text-base font-bold uppercase tracking-wide">
+                {machineType} TYPE - PICTURES SECTION
+              </h3>
+            </div>
+
+            <div className="p-4 sm:p-6">
+              <p className="text-xs sm:text-sm text-slate-600 mb-4">
+                Please upload all required photos for this machine type before submitting.
+              </p>
+
+              {/* Photo Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {currentPictureConfigs.map((cfg) => (
+                  <PhotoCaptureCard
+                    key={cfg.key}
+                    fieldKey={cfg.key}
+                    label={cfg.label}
+                    required={cfg.required}
+                    hint={cfg.hint}
+                    imageValue={pictures[cfg.key]}
+                    onImageChange={handlePictureChange}
+                    onImageRemove={handlePictureRemove}
+                    onPreview={handlePicturePreview}
+                  />
+                ))}
               </div>
             </div>
+          </div>
+
+          {/* SUBMIT BUTTON AT THE VERY BOTTOM */}
+          <div className="pt-2 pb-6">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full py-3.5 px-6 bg-blue-700 hover:bg-blue-800 active:bg-blue-900 text-white font-bold text-base sm:text-lg rounded-xl shadow-md transition-all flex items-center justify-center gap-3 disabled:opacity-75 disabled:cursor-not-allowed touch-manipulation"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin text-white" />
+                  <span>{submitProgressText || 'SUBMITTING INSPECTION...'}</span>
+                </>
+              ) : (
+                <span>SUBMIT INSPECTION</span>
+              )}
+            </button>
           </div>
         </form>
       </main>

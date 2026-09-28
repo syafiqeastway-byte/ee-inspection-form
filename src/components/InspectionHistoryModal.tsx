@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SavedInspectionRecord } from '../types/inspection';
-import { X, Search, FileText, CheckCircle2, XCircle, AlertTriangle, Calendar, MapPin, Hash, Download } from 'lucide-react';
+import { X, Search, FileText, CheckCircle2, XCircle, AlertTriangle, Calendar, MapPin, Hash, Download, Loader2 } from 'lucide-react';
+import { generateInspectionPdf } from '../utils/pdfGenerator';
 
 interface InspectionHistoryModalProps {
   isOpen: boolean;
@@ -180,6 +181,30 @@ export const InspectionHistoryModal: React.FC<InspectionHistoryModalProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 self-end sm:self-center">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const { blob } = await generateInspectionPdf(rec);
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `${rec.formNo || 'INSPECTION_REPORT'}.pdf`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                        } catch (e) {
+                          console.error('Download error:', e);
+                        }
+                      }}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 transition-colors flex items-center gap-1"
+                      title={`Download ${rec.formNo}.pdf`}
+                    >
+                      <Download className="w-3.5 h-3.5 text-slate-600" />
+                      <span className="hidden sm:inline">PDF</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
