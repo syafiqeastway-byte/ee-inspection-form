@@ -176,7 +176,7 @@ export default function App() {
 
   // UI State: Submitting, Progress tracking & Toasts
   interface SubmitProgressState {
-    step: 'photo' | 'pdf_generate' | 'pdf_upload' | 'sheet_save';
+    step: 'verify_form_no' | 'photo' | 'pdf_generate' | 'pdf_upload' | 'sheet_save';
     currentPhotoIndex: number;
     totalPhotos: number;
     currentPhotoLabel: string;
@@ -596,17 +596,39 @@ export default function App() {
 
     // Submit Process
     setIsSubmitting(true);
-    setSubmitProgressText('PREPARING UPLOAD...');
+    setSubmitProgressText('VERIFYING LATEST FORM NUMBER...');
 
     const uploadedUrlMap: Record<string, string> = {};
     const photosToUpload = currentPictureConfigs.filter((cfg) => !!pictures[cfg.key]);
     const totalPhotos = photosToUpload.length;
 
+    setSubmitProgress({
+      step: 'verify_form_no',
+      currentPhotoIndex: 0,
+      totalPhotos: totalPhotos,
+      currentPhotoLabel: 'Synchronizing latest Form No from Google Sheet...',
+      percent: 5,
+      statusMessage: 'Synchronizing latest Form Number...'
+    });
+
+    let activeFormNo = (formNo && formNo !== 'Loading Form No...') ? formNo : generateNextFormNumber(machineType);
+
+    // Live re-check of latest Form Number from Google Sheet to avoid duplicate form numbers across concurrent users
+    try {
+      const freshFormNo = await fetchBackendFormNo(machineType);
+      if (freshFormNo && (freshFormNo.startsWith('EE-IFE-') || freshFormNo.startsWith('EE-IFB-'))) {
+        activeFormNo = freshFormNo;
+        setFormNo(freshFormNo);
+      }
+    } catch (formNoErr) {
+      console.warn('Real-time form number check notice:', formNoErr);
+    }
+
     // 1. Sequential upload of active images to Google Drive with progress counter (1/14, 2/14, etc.)
     for (let i = 0; i < totalPhotos; i++) {
       const cfg = photosToUpload[i];
       const photoIdx = i + 1;
-      const percent = Math.round((photoIdx / (totalPhotos + 3)) * 75);
+      const percent = Math.round(5 + (photoIdx / (totalPhotos + 3)) * 70);
 
       setSubmitProgress({
         step: 'photo',
@@ -629,8 +651,6 @@ export default function App() {
         }
       }
     }
-
-    const activeFormNo = (formNo && formNo !== 'Loading Form No...') ? formNo : generateNextFormNumber(machineType);
 
     // 2. Generate PDF Document & Upload to Google Drive (Battery / Engine Folder)
     let pdfUrl = '';
@@ -1402,6 +1422,11 @@ export default function App() {
                       <Camera className="w-4 h-4 text-blue-600" />
                       Uploading Pictures to Drive
                     </>
+                  ) : submitProgress?.step === 'verify_form_no' ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                      Verifying Latest Form No
+                    </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -1412,6 +1437,8 @@ export default function App() {
                 <span className="bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full font-mono text-xs font-black">
                   {submitProgress?.step === 'photo'
                     ? `${submitProgress.currentPhotoIndex} / ${submitProgress.totalPhotos}`
+                    : submitProgress?.step === 'verify_form_no'
+                    ? 'Syncing'
                     : 'Finalizing'}
                 </span>
               </div>
