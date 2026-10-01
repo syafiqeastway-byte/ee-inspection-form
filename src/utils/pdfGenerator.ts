@@ -231,20 +231,38 @@ export async function generateInspectionPdf(record: SavedInspectionRecord): Prom
     // Section Remark Row
     const comment = record.sectionComments[sec.commentName];
     if (comment && comment.trim()) {
-      checkPageBreak(8);
-      doc.setFillColor(254, 243, 199); // Soft Amber background
-      doc.rect(margin, y, contentWidth, 6, 'F');
-      doc.setDrawColor(251, 191, 36);
-      doc.rect(margin, y, contentWidth, 6, 'S');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
 
+      const prefixWidth = 24; // mm for "REMARK / NOTE:"
+      const textWidth = contentWidth - prefixWidth - 6;
+      const splitComment = doc.splitTextToSize(comment.trim(), textWidth);
+      const lineHeight = 3.6;
+      const topPadding = 4;
+      const bottomPadding = 2.5;
+      const boxHeight = Math.max(6.5, splitComment.length * lineHeight + topPadding + bottomPadding - 1.5);
+
+      checkPageBreak(boxHeight + 2);
+
+      // Expanding background & border box for any length of remarks
+      doc.setFillColor(254, 243, 199); // Soft Amber background
+      doc.rect(margin, y, contentWidth, boxHeight, 'F');
+      doc.setDrawColor(251, 191, 36);
+      doc.rect(margin, y, contentWidth, boxHeight, 'S');
+
+      // Prefix Header
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7);
       doc.setTextColor(146, 64, 14);
-      doc.text('REMARK / NOTE:', margin + 3, y + 4);
+      doc.text('REMARK / NOTE:', margin + 3, y + topPadding);
 
+      // Multi-line wrapped remark content
       doc.setFont('helvetica', 'normal');
-      doc.text(comment.trim(), margin + 28, y + 4);
-      y += 6;
+      doc.setFontSize(7.5);
+      doc.setTextColor(120, 53, 15);
+      doc.text(splitComment, margin + prefixWidth + 2, y + topPadding);
+
+      y += boxHeight;
     }
 
     y += 3;
@@ -472,17 +490,20 @@ export async function generateInspectionPdf(record: SavedInspectionRecord): Prom
   });
 
   // Row 5: Overall Remarks / Comments
-  const remarksText = record.overallComment?.trim() || 'None / Tiada catatan kerosakan atau ulasan tambahan.';
+  const remarksText = record.overallComment?.trim() || 'None / No additional remarks or recorded damage.';
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   const splitRemarks = doc.splitTextToSize(remarksText, valueColWidth - 8);
-  const remarksRowHeight = Math.max(8.5, splitRemarks.length * 4 + 4.5);
+  const remarksLineHeight = 3.6;
+  const remarksTopPadding = 4;
+  const remarksBottomPadding = 2.5;
+  const remarksRowHeight = Math.max(9, splitRemarks.length * remarksLineHeight + remarksTopPadding + remarksBottomPadding - 1.5);
 
   drawTableRow('Overall Remarks', remarksRowHeight, (x, yPos) => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(record.overallComment ? 15 : 100, record.overallComment ? 23 : 116, record.overallComment ? 42 : 139);
-    doc.text(splitRemarks, x + 4, yPos + 4.5);
+    doc.text(splitRemarks, x + 4, yPos + remarksTopPadding);
   });
 
   // Footer Page Numbers

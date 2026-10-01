@@ -232,7 +232,7 @@ export const InspectionReportPrint: React.FC<InspectionReportPrintProps> = ({ re
                     </div>
 
                     {record.sectionComments[sec.commentName] && (
-                      <div className="mt-2.5 p-2 bg-blue-50/70 border border-blue-100 rounded text-xs text-blue-900">
+                      <div className="mt-2.5 p-2 bg-blue-50/70 border border-blue-100 rounded text-xs text-blue-900 whitespace-pre-wrap">
                         <span className="font-bold">Note: </span>
                         {record.sectionComments[sec.commentName]}
                       </div>
