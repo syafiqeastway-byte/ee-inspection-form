@@ -234,13 +234,14 @@ export async function generateInspectionPdf(record: SavedInspectionRecord): Prom
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
 
+      const cleanComment = comment.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       const prefixWidth = 24; // mm for "REMARK / NOTE:"
       const textWidth = contentWidth - prefixWidth - 6;
-      const splitComment = doc.splitTextToSize(comment.trim(), textWidth);
+      const splitComment = doc.splitTextToSize(cleanComment, textWidth);
       const lineHeight = 3.6;
       const topPadding = 4;
-      const bottomPadding = 2.5;
-      const boxHeight = Math.max(6.5, splitComment.length * lineHeight + topPadding + bottomPadding - 1.5);
+      const bottomPadding = 3;
+      const boxHeight = Math.max(7, splitComment.length * lineHeight + topPadding + bottomPadding - 1.5);
 
       checkPageBreak(boxHeight + 2);
 
@@ -490,14 +491,15 @@ export async function generateInspectionPdf(record: SavedInspectionRecord): Prom
   });
 
   // Row 5: Overall Remarks / Comments
-  const remarksText = record.overallComment?.trim() || 'None / No additional remarks or recorded damage.';
+  const rawRemarks = record.overallComment?.trim() || 'None / No additional remarks or recorded damage.';
+  const remarksText = rawRemarks.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   const splitRemarks = doc.splitTextToSize(remarksText, valueColWidth - 8);
   const remarksLineHeight = 3.6;
   const remarksTopPadding = 4;
-  const remarksBottomPadding = 2.5;
-  const remarksRowHeight = Math.max(9, splitRemarks.length * remarksLineHeight + remarksTopPadding + remarksBottomPadding - 1.5);
+  const remarksBottomPadding = 3;
+  const remarksRowHeight = Math.max(9.5, splitRemarks.length * remarksLineHeight + remarksTopPadding + remarksBottomPadding - 1.5);
 
   drawTableRow('Overall Remarks', remarksRowHeight, (x, yPos) => {
     doc.setFont('helvetica', 'normal');
