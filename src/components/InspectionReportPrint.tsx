@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { SavedInspectionRecord } from '../types/inspection';
 import { batterySections, engineSections, batteryPictureFieldsConfig, enginePictureFieldsConfig } from '../data/inspectionConfig';
-import { Printer, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, ShieldCheck, Download, Loader2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Download, Loader2 } from 'lucide-react';
 import { generateInspectionPdf } from '../utils/pdfGenerator';
 
 interface InspectionReportPrintProps {
@@ -13,10 +13,6 @@ export const InspectionReportPrint: React.FC<InspectionReportPrintProps> = ({ re
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const sections = record.machineType === 'ENGINE' ? engineSections : batterySections;
   const pictureConfig = record.machineType === 'ENGINE' ? enginePictureFieldsConfig : batteryPictureFieldsConfig;
-
-  const handlePrint = () => {
-    window.print();
-  };
 
   const handleDownloadPdf = async () => {
     try {
@@ -79,25 +75,17 @@ export const InspectionReportPrint: React.FC<InspectionReportPrintProps> = ({ re
             type="button"
             disabled={isGeneratingPdf}
             onClick={handleDownloadPdf}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs sm:text-sm rounded-xl shadow-sm transition-colors border border-slate-700 disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-semibold text-xs sm:text-sm rounded-xl shadow-md transition-colors border border-blue-600 disabled:opacity-50"
           >
             {isGeneratingPdf ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin text-blue-400" /> Generating PDF...
+                <Loader2 className="w-4 h-4 animate-spin text-blue-200" /> Generating PDF...
               </>
             ) : (
               <>
-                <Download className="w-4 h-4 text-emerald-400" /> Download PDF ({record.formNo}.pdf)
+                <Download className="w-4 h-4 text-emerald-300" /> Download PDF ({record.formNo}.pdf)
               </>
             )}
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-semibold text-xs sm:text-sm rounded-xl shadow-md transition-colors"
-          >
-            <Printer className="w-4 h-4" /> Print / System Dialog
           </button>
         </div>
       </div>
