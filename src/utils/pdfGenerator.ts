@@ -464,17 +464,17 @@ export async function generateInspectionPdf(record: SavedInspectionRecord): Prom
     doc.text(`${record.inspectionDate} at ${record.inspectionTime}`, x + 4, yPos + 4.5);
   });
 
-  // Row 4: Digital Signature
+  // Row 4: Signature
   const hasSignature = !!(record.signatureDataUrl && record.signatureDataUrl.startsWith('data:image'));
   const sigRowHeight = hasSignature ? 22 : 7.5;
-  drawTableRow('Digital Signature', sigRowHeight, (x, yPos) => {
+  drawTableRow('Signature', sigRowHeight, (x, yPos) => {
     if (hasSignature && record.signatureDataUrl) {
       try {
         doc.addImage(record.signatureDataUrl, 'PNG', x + 4, yPos + 2, 42, 17, undefined, 'FAST');
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7);
         doc.setTextColor(100, 116, 139);
-        doc.text(`Digitally signed by: ${record.technicianName || 'Inspector'}`, x + 50, yPos + 9);
+        doc.text(`Signed by: ${record.technicianName || 'Inspector'}`, x + 50, yPos + 9);
         doc.text(`Timestamp: ${record.inspectionDate} ${record.inspectionTime}`, x + 50, yPos + 13.5);
       } catch (err) {
         doc.setFont('helvetica', 'normal');
