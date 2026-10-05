@@ -967,28 +967,19 @@ export default function App() {
                   <div className="flex items-center gap-1.5">
                     {supabaseSyncStatus.isLoading ? (
                       <span className="text-[10px] text-blue-600 flex items-center gap-1 font-semibold animate-pulse">
-                        <Loader2 className="w-3 h-3 animate-spin" /> Syncing Supabase...
+                        <Loader2 className="w-3 h-3 animate-spin" /> Syncing...
                       </span>
                     ) : (
-                      <span
-                        className={`text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 ${
-                          supabaseSyncStatus.source === 'supabase'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold'
-                            : 'bg-slate-100 text-slate-700 border-slate-300'
-                        }`}
-                        title="Supabase MEWP FLEET Database"
+                      <button
+                        type="button"
+                        onClick={() => syncSupabaseFleet(true)}
+                        className="text-[10px] font-medium px-2 py-0.5 rounded border flex items-center gap-1 bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200 hover:text-blue-700 transition-colors cursor-pointer"
+                        title="Refresh MEWP FLEET from Supabase"
                       >
-                        SUPABASE: {pmaDatabase.length} FLEET
-                      </span>
+                        <RefreshCw className="w-3 h-3 text-slate-500" />
+                        <span>Refresh</span>
+                      </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => syncSupabaseFleet(true)}
-                      className="p-1 hover:text-blue-600 text-slate-400 transition-colors cursor-pointer"
-                      title="Sync from Supabase MEWP FLEET"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${supabaseSyncStatus.isLoading ? 'animate-spin text-blue-600' : ''}`} />
-                    </button>
                   </div>
                 </div>
 
