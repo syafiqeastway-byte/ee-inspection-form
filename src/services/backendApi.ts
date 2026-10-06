@@ -228,6 +228,102 @@ export async function searchBackendPmaNumber(
 }
 
 /**
+ * Extracts a valid Google Drive URL from various possible response formats
+ * returned by Google Apps Script / Google Drive APIs.
+ */
+export function extractDriveUrl(res: any): string {
+  if (!res) return '';
+  if (typeof res === 'string') {
+    const trimmed = res.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    // If raw Google Drive ID was passed
+    if (trimmed.length > 20 && !trimmed.includes(' ') && !trimmed.startsWith('data:')) {
+      return `https://drive.google.com/file/d/${trimmed}/view?usp=drivesdk`;
+    }
+    return '';
+  }
+
+  // Check all common URL properties from DriveApp / Apps Script responses
+  const candidates = [
+    res.url,
+    res.fileUrl,
+    res.viewUrl,
+    res.link,
+    res.webViewLink,
+    res.webContentLink,
+    res.downloadUrl
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && (c.startsWith('http://') || c.startsWith('https://'))) {
+      return c.trim();
+    }
+  }
+
+  // If fileId or id was returned
+  const fileId = res.fileId || res.id || res.file_id;
+  if (typeof fileId === 'string' && fileId.trim().length > 15 && !fileId.startsWith('data:')) {
+    return `https://drive.google.com/file/d/${fileId.trim()}/view?usp=drivesdk`;
+  }
+
+  return '';
+}
+
+/**
+ * Reliable HTTP POST to Google Apps Script Web App with timeout and auto-retry
+ */
+async function postToAppsScriptWithRetry(
+  endpoint: string,
+  payload: Record<string, any>,
+  maxRetries = 2,
+  timeoutMs = 45000
+): Promise<any> {
+  let lastError: any = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+
+      if (resp.ok) {
+        const text = await resp.text();
+        try {
+          const json = JSON.parse(text);
+          return json;
+        } catch {
+          if (text.startsWith('http://') || text.startsWith('https://')) {
+            return { success: true, url: text.trim() };
+          }
+          return { success: true, raw: text };
+        }
+      } else {
+        lastError = new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+      }
+    } catch (err: any) {
+      clearTimeout(timer);
+      lastError = err;
+      console.warn(`Apps Script request (${payload.action}) attempt ${attempt} warning:`, err?.message || err);
+    }
+
+    if (attempt < maxRetries) {
+      // Pause briefly before retrying
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+
+  throw lastError || new Error(`Request failed after ${maxRetries} attempts`);
+}
+
+/**
  * Uploads a single image to Google Drive folder (ID: 1qFBW8DG4zGiKiYEpmpN5be8n7lMWE8wC)
  * Filename format: {month}-{year}-{sequence} (e.g. 9-26-1, 9-26-2)
  */
@@ -247,7 +343,6 @@ export async function uploadSingleImageToDrive(
   if (inspectionDateStr) {
     const parts = inspectionDateStr.split('-');
     if (parts.length === 3) {
-      // Expect YYYY-MM-DD
       const y = parseInt(parts[0], 10);
       const m = parseInt(parts[1], 10) - 1;
       const d = parseInt(parts[2], 10);
@@ -263,13 +358,13 @@ export async function uploadSingleImageToDrive(
   // 1. If embedded in Google Apps Script HtmlService
   if (hasGoogleScriptRun()) {
     try {
-      return await new Promise((resolve, reject) => {
+      const res: any = await new Promise((resolve, reject) => {
         google.script.run
-          .withSuccessHandler((res: { success: boolean; url?: string; filename?: string; error?: string }) => {
-            if (res && res.success) {
-              resolve(res);
+          .withSuccessHandler((r: any) => {
+            if (r && r.success) {
+              resolve(r);
             } else {
-              reject(new Error(res?.error || 'Failed to upload photo to Google Drive'));
+              reject(new Error(r?.error || 'Failed to upload photo to Google Drive'));
             }
           })
           .withFailureHandler((err: any) => {
@@ -277,6 +372,8 @@ export async function uploadSingleImageToDrive(
           })
           .uploadSingleImageToDrive(base64Raw, fieldKey, pmaNumber, customFilename);
       });
+      const resolvedUrl = extractDriveUrl(res);
+      return { success: true, url: resolvedUrl, filename: customFilename, ...res };
     } catch (e: any) {
       console.warn('Apps Script run upload failed:', e);
     }
@@ -286,10 +383,9 @@ export async function uploadSingleImageToDrive(
   const endpoint = getAppsScriptUrl();
   if (endpoint) {
     try {
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
+      const data = await postToAppsScriptWithRetry(
+        endpoint,
+        {
           action: 'uploadImage',
           base64Data: base64Raw,
           fieldKey,
@@ -298,19 +394,25 @@ export async function uploadSingleImageToDrive(
           customFilename: customFilename,
           photoIndex,
           folderId: DRIVE_PHOTO_FOLDER_ID
-        })
-      });
-      const data = await resp.json();
+        },
+        2,
+        45000
+      );
+
+      const resolvedUrl = extractDriveUrl(data);
+      if (resolvedUrl) {
+        return { success: true, url: resolvedUrl, filename: customFilename, ...data };
+      }
       if (data && data.success) {
-        return data;
+        return { success: true, url: '', filename: customFilename, ...data };
       }
     } catch (err: any) {
       console.warn('Web App URL image upload notice:', err);
     }
   }
 
-  // 3. Fallback: keep base64 locally so user does not lose photos
-  return { success: true, url: base64Raw, filename: customFilename };
+  // 3. Fallback: Return empty URL so raw base64 never overflows Google Sheet cells
+  return { success: false, url: '', filename: customFilename, error: 'Failed to obtain Drive URL' };
 }
 
 /**
@@ -332,13 +434,13 @@ export async function uploadPdfToDrive(
   // 1. If embedded in Google Apps Script HtmlService
   if (hasGoogleScriptRun()) {
     try {
-      return await new Promise((resolve, reject) => {
+      const res: any = await new Promise((resolve, reject) => {
         google.script.run
-          .withSuccessHandler((res: { success: boolean; url?: string; filename?: string; error?: string }) => {
-            if (res && res.success) {
-              resolve(res);
+          .withSuccessHandler((r: any) => {
+            if (r && r.success) {
+              resolve(r);
             } else {
-              reject(new Error(res?.error || 'Failed to upload PDF to Google Drive'));
+              reject(new Error(r?.error || 'Failed to upload PDF to Google Drive'));
             }
           })
           .withFailureHandler((err: any) => {
@@ -346,6 +448,8 @@ export async function uploadPdfToDrive(
           })
           .uploadPdfToDrive(pdfBase64, targetFolderId, fileName);
       });
+      const resolvedUrl = extractDriveUrl(res);
+      return { success: true, url: resolvedUrl, filename: fileName, ...res };
     } catch (e: any) {
       console.warn('Apps Script run PDF upload failed:', e);
     }
@@ -355,28 +459,33 @@ export async function uploadPdfToDrive(
   const endpoint = getAppsScriptUrl();
   if (endpoint) {
     try {
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
+      const data = await postToAppsScriptWithRetry(
+        endpoint,
+        {
           action: 'uploadPdf',
           base64Data: pdfBase64,
           folderId: targetFolderId,
           fileName: fileName,
           machineType,
           formNo
-        })
-      });
-      const data = await resp.json();
+        },
+        2,
+        50000
+      );
+
+      const resolvedUrl = extractDriveUrl(data);
+      if (resolvedUrl) {
+        return { success: true, url: resolvedUrl, filename: fileName, ...data };
+      }
       if (data && data.success) {
-        return data;
+        return { success: true, url: '', filename: fileName, ...data };
       }
     } catch (err: any) {
       console.warn('Web App URL PDF upload notice:', err);
     }
   }
 
-  return { success: true, url: '' };
+  return { success: false, url: '', error: 'Failed to obtain PDF Drive URL' };
 }
 
 export interface SheetInspectionPayload {
@@ -410,6 +519,22 @@ export async function saveInspectionToGoogleSheet(
 ): Promise<{ success: boolean; formNo?: string; error?: string }> {
   const sheetName = payload.machineType === 'ENGINE' ? SHEET_NAME_ENGINE : SHEET_NAME_BATTERY;
 
+  // Sanitize all picture URLs so only valid HTTP Drive URLs are included (never huge base64 strings)
+  const safePictures: Record<string, string> = {};
+  if (payload.pictures) {
+    for (const [k, v] of Object.entries(payload.pictures)) {
+      if (typeof v === 'string' && (v.startsWith('http://') || v.startsWith('https://'))) {
+        safePictures[k] = v.trim();
+      } else {
+        safePictures[k] = '';
+      }
+    }
+  }
+
+  const cleanPdfUrl = (typeof payload.pdfUrl === 'string' && (payload.pdfUrl.startsWith('http://') || payload.pdfUrl.startsWith('https://')))
+    ? payload.pdfUrl.trim()
+    : '';
+
   const flatData: Record<string, any> = {
     spreadsheetId: SPREADSHEET_ID,
     sheetName: sheetName,
@@ -425,8 +550,29 @@ export async function saveInspectionToGoogleSheet(
     siteLocation: payload.siteLocation,
     ...payload.checklistAnswers,
     ...payload.sectionComments,
-    ...payload.pictures,
-    pdfUrl: payload.pdfUrl || '',
+    // Picture keys directly
+    ...safePictures,
+    // Provide explicit mappings for exact Google Sheets column headers:
+    '1. FRONT MACHINES': safePictures['FRONT_MACHINE'] || '',
+    '2. REAR MACHINES': safePictures['REAR_MACHINE'] || '',
+    '3. LEFT SIDE MACHINES': safePictures['LEFT_SIDE_MACHINE'] || '',
+    '4. RIGHT SIDE MACHINES': safePictures['RIGHT_SIDE_MACHINE'] || '',
+    '5. LEFT FRONT TIRES': safePictures['LEFT_FRONT_TIRE'] || '',
+    '6. RIGHT FRONT TIRES': safePictures['RIGHT_FRONT_TIRE'] || '',
+    '7. LEFT REAR TIRES': safePictures['LEFT_REAR_TIRE'] || '',
+    '8. RIGHT REAR TIRES': safePictures['RIGHT_REAR_TIRE'] || '',
+    '9. BATTERY COMPARTMENT': safePictures['BATTERY_COMPARTMENT'] || safePictures['ENGINE_COMPARTMENT'] || '',
+    '10. TANK COMPARTMENT': safePictures['TANK_COMPARTMENT'] || '',
+    '11. JOYSTICK': safePictures['JOYSTICK'] || '',
+    '12. DATA PLATES': safePictures['DATA_PLATES'] || '',
+    '13. PLATFORM BASKET': safePictures['PLATFORM_BASKET'] || '',
+    '14. JIB STRUCTURE (if applicable)': safePictures['JIB_STRUCTURE'] || '',
+    // PDF URLs under all common column names / aliases
+    PDF: cleanPdfUrl,
+    pdfUrl: cleanPdfUrl,
+    pdf_url: cleanPdfUrl,
+    PDF_URL: cleanPdfUrl,
+    pdfLink: cleanPdfUrl,
     overallComment: payload.overallComment,
     inspectionStatus: payload.inspectionStatus,
     technicianName: payload.technicianName,
@@ -455,15 +601,16 @@ export async function saveInspectionToGoogleSheet(
   const endpoint = getAppsScriptUrl();
   if (endpoint) {
     try {
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
+      const data = await postToAppsScriptWithRetry(
+        endpoint,
+        {
           action: 'saveInspection',
           ...flatData
-        })
-      });
-      const data = await resp.json();
+        },
+        2,
+        50000
+      );
+
       if (data && data.success) {
         return { success: true, formNo: data.formNo || payload.formNo };
       }

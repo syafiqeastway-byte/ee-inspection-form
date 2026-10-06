@@ -60,6 +60,7 @@ import {
   uploadSingleImageToDrive,
   uploadPdfToDrive,
   saveInspectionToGoogleSheet,
+  extractDriveUrl,
   hasGoogleScriptRun,
   SPREADSHEET_ID
 } from './services/backendApi';
@@ -644,10 +645,33 @@ export default function App() {
       if (base64Data) {
         try {
           const res = await uploadSingleImageToDrive(base64Data, cfg.key, pmaNumber, photoIdx, inspectionDate);
-          uploadedUrlMap[cfg.key] = res.url || base64Data;
+          const driveUrl = extractDriveUrl(res);
+          if (driveUrl) {
+            uploadedUrlMap[cfg.key] = driveUrl;
+          }
         } catch (uploadErr: any) {
           console.error(`Image upload error for ${cfg.key}:`, uploadErr);
-          uploadedUrlMap[cfg.key] = base64Data;
+        }
+      }
+    }
+
+    // Auto-retry pass for any photo that missed a Drive URL on the first attempt
+    const pendingPhotos = photosToUpload.filter(
+      (cfg) => !uploadedUrlMap[cfg.key] || !uploadedUrlMap[cfg.key].startsWith('http')
+    );
+    for (const cfg of pendingPhotos) {
+      const photoIdx = photosToUpload.findIndex((p) => p.key === cfg.key) + 1;
+      const base64Data = pictures[cfg.key];
+      if (base64Data) {
+        try {
+          setSubmitProgressText(`RETRYING PHOTO (${photoIdx}/${totalPhotos})...`);
+          const retryRes = await uploadSingleImageToDrive(base64Data, cfg.key, pmaNumber, photoIdx, inspectionDate);
+          const retryUrl = extractDriveUrl(retryRes);
+          if (retryUrl) {
+            uploadedUrlMap[cfg.key] = retryUrl;
+          }
+        } catch (retryErr) {
+          console.warn(`Retry upload failed for ${cfg.key}:`, retryErr);
         }
       }
     }
@@ -704,8 +728,14 @@ export default function App() {
       setSubmitProgressText('UPLOADING PDF TO GOOGLE DRIVE...');
 
       const pdfUploadRes = await uploadPdfToDrive(pdfResult.base64, machineType, activeFormNo);
-      if (pdfUploadRes && pdfUploadRes.url) {
-        pdfUrl = pdfUploadRes.url;
+      pdfUrl = extractDriveUrl(pdfUploadRes);
+
+      // Auto-retry PDF upload if Drive URL was not captured
+      if (!pdfUrl) {
+        console.warn('PDF Drive URL missing, retrying PDF upload...');
+        setSubmitProgressText('RETRYING PDF UPLOAD TO GOOGLE DRIVE...');
+        const retryPdfRes = await uploadPdfToDrive(pdfResult.base64, machineType, activeFormNo);
+        pdfUrl = extractDriveUrl(retryPdfRes);
       }
     } catch (pdfErr) {
       console.warn('PDF generation/upload notice:', pdfErr);
@@ -721,6 +751,13 @@ export default function App() {
     });
     setSubmitProgressText('SAVING TO GOOGLE SHEET...');
 
+    // Clean pictures map: ONLY include valid HTTP Drive URLs (NEVER send raw base64 data to Sheet cells)
+    const cleanPictureUrlsForSheet: Record<string, string> = {};
+    for (const cfg of currentPictureConfigs) {
+      const val = uploadedUrlMap[cfg.key];
+      cleanPictureUrlsForSheet[cfg.key] = (typeof val === 'string' && val.startsWith('http')) ? val.trim() : '';
+    }
+
     // 3. Build structured payload matching Google Sheets (BATTERY / ENGINE sheet)
     const inspectionPayload = {
       machineType,
@@ -735,7 +772,7 @@ export default function App() {
       siteLocation: siteLocation ? siteLocation.trim().toUpperCase() : 'NA',
       checklistAnswers,
       sectionComments,
-      pictures: uploadedUrlMap,
+      pictures: cleanPictureUrlsForSheet,
       pdfUrl,
       overallComment: overallComment.trim().toUpperCase(),
       inspectionStatus,
