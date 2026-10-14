@@ -8,8 +8,8 @@ export const SHEET_NAME_BATTERY = 'BATTERY TYPE';
 export const SHEET_NAME_ENGINE = 'ENGINE TYPE';
 
 // Target PDF Columns in Google Sheet
-export const BATTERY_PDF_COLUMN_LETTER = 'CH'; // Column 86
-export const ENGINE_PDF_COLUMN_LETTER = 'CP';  // Column 94
+export const BATTERY_PDF_COLUMN_LETTER = 'CJ'; // Column 88
+export const ENGINE_PDF_COLUMN_LETTER = 'CR';  // Column 96
 
 // Google Drive Folder IDs
 export const DRIVE_PHOTO_FOLDER_ID = '1qFBW8DG4zGiKiYEpmpN5be8n7lMWE8wC';
@@ -567,6 +567,8 @@ export async function saveInspectionToGoogleSheet(
     '12. DATA PLATES': safePictures['DATA_PLATES'] || '',
     '13. PLATFORM BASKET': safePictures['PLATFORM_BASKET'] || '',
     '14. JIB STRUCTURE (if applicable)': safePictures['JIB_STRUCTURE'] || '',
+    '15. CABLE TRACK': safePictures['CABLE_TRACK'] || '',
+    '16. GROUND CONTROL PANEL': safePictures['GROUND_CONTROL_PANEL'] || '',
     // PDF URLs under all common column names / aliases
     PDF: cleanPdfUrl,
     pdfUrl: cleanPdfUrl,

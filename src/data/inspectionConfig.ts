@@ -15,7 +15,9 @@ export const batteryPictureFieldsConfig: PictureFieldConfig[] = [
   { key: 'JOYSTICK', label: 'JOYSTICK', required: true },
   { key: 'DATA_PLATES', label: 'DATA PLATES', required: true },
   { key: 'PLATFORM_BASKET', label: 'PLATFORM BASKET', required: true },
-  { key: 'JIB_STRUCTURE', label: 'JIB STRUCTURE (IF APPLICABLE)', required: false }
+  { key: 'JIB_STRUCTURE', label: 'JIB STRUCTURE (IF APPLICABLE)', required: false },
+  { key: 'CABLE_TRACK', label: 'CABLE TRACK (IF APPLICABLE)', required: false },
+  { key: 'GROUND_CONTROL_PANEL', label: 'GROUND CONTROL PANEL', required: true }
 ];
 
 // ENGINE TYPE PICTURES CONFIGURATION
@@ -33,7 +35,9 @@ export const enginePictureFieldsConfig: PictureFieldConfig[] = [
   { key: 'JOYSTICK', label: 'JOYSTICK', required: true },
   { key: 'DATA_PLATES', label: 'DATA PLATES', required: true },
   { key: 'PLATFORM_BASKET', label: 'PLATFORM BASKET', required: true },
-  { key: 'JIB_STRUCTURE', label: 'JIB STRUCTURE (IF APPLICABLE)', required: false }
+  { key: 'JIB_STRUCTURE', label: 'JIB STRUCTURE (IF APPLICABLE)', required: false },
+  { key: 'CABLE_TRACK', label: 'CABLE TRACK (IF APPLICABLE)', required: false },
+  { key: 'GROUND_CONTROL_PANEL', label: 'GROUND CONTROL PANEL', required: true }
 ];
 
 // BATTERY TYPE CHECKLIST STRUCTURE
