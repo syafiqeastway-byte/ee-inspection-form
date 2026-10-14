@@ -567,7 +567,7 @@ export async function saveInspectionToGoogleSheet(
     '12. DATA PLATES': safePictures['DATA_PLATES'] || '',
     '13. PLATFORM BASKET': safePictures['PLATFORM_BASKET'] || '',
     '14. JIB STRUCTURE (if applicable)': safePictures['JIB_STRUCTURE'] || '',
-    '15. CABLE TRACK': safePictures['CABLE_TRACK'] || '',
+    '15. CABLE TRACK (IF APPLICABLE)': safePictures['CABLE_TRACK'] || '',
     '16. GROUND CONTROL PANEL': safePictures['GROUND_CONTROL_PANEL'] || '',
     // PDF URLs under all common column names / aliases
     PDF: cleanPdfUrl,
