@@ -235,49 +235,104 @@ export function extractDriveUrl(res: any): string {
   if (!res) return '';
   if (typeof res === 'string') {
     const trimmed = res.trim();
+    // 1. Direct regex check for Google Drive / Docs URL
+    const urlMatch = trimmed.match(/https?:\/\/(?:drive|docs)\.google\.com\/[^\s"'<>\\]+/i);
+    if (urlMatch) {
+      return urlMatch[0].replace(/\\/g, '');
+    }
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
       return trimmed;
     }
-    // If raw Google Drive ID was passed
-    if (trimmed.length > 20 && !trimmed.includes(' ') && !trimmed.startsWith('data:')) {
-      return `https://drive.google.com/file/d/${trimmed}/view?usp=drivesdk`;
+    // 2. If raw Google Drive ID was passed
+    const cleanId = trimmed.replace(/[^a-zA-Z0-9_-]/g, '');
+    if (cleanId.length >= 20 && !cleanId.includes(' ') && !cleanId.startsWith('data')) {
+      return `https://drive.google.com/file/d/${cleanId}/view?usp=drivesdk`;
     }
     return '';
   }
 
-  // Check all common URL properties from DriveApp / Apps Script responses
-  const candidates = [
-    res.url,
-    res.fileUrl,
-    res.viewUrl,
-    res.link,
-    res.webViewLink,
-    res.webContentLink,
-    res.downloadUrl
+  // Check candidate keys on object
+  const candidateKeys = [
+    'url', 'fileUrl', 'pdfUrl', 'pdf_url', 'pdfLink', 'driveUrl', 'file_url',
+    'viewUrl', 'link', 'webViewLink', 'webContentLink', 'downloadUrl',
+    'id', 'fileId', 'file_id', 'raw'
   ];
-  for (const c of candidates) {
-    if (typeof c === 'string' && (c.startsWith('http://') || c.startsWith('https://'))) {
-      return c.trim();
+
+  for (const k of candidateKeys) {
+    if (res[k]) {
+      const extracted = extractDriveUrl(res[k]);
+      if (extracted) return extracted;
     }
   }
 
-  // If fileId or id was returned
-  const fileId = res.fileId || res.id || res.file_id;
-  if (typeof fileId === 'string' && fileId.trim().length > 15 && !fileId.startsWith('data:')) {
-    return `https://drive.google.com/file/d/${fileId.trim()}/view?usp=drivesdk`;
+  // Check common nested containers: data, result, file, response, payload, item
+  const nestedKeys = ['data', 'result', 'file', 'response', 'payload', 'item'];
+  for (const n of nestedKeys) {
+    if (res[n] && typeof res[n] === 'object') {
+      const extracted = extractDriveUrl(res[n]);
+      if (extracted) return extracted;
+    }
+  }
+
+  // Check if stringified representation contains a Google Drive URL
+  try {
+    const str = JSON.stringify(res);
+    const m = str.match(/https?:\\?\/\\?\/drive\.google\.com\\?\/[^\s"'<>\\]+/i);
+    if (m) {
+      return m[0].replace(/\\/g, '');
+    }
+  } catch {
+    // Ignore JSON stringify error
   }
 
   return '';
 }
 
 /**
- * Reliable HTTP POST to Google Apps Script Web App with timeout and auto-retry
+ * Automatically recovers an uploaded file's Google Drive URL from the public Drive folder
+ * if the direct HTTP response timed out or was interrupted.
+ */
+export async function recoverDriveFileUrl(folderId: string, fileName: string): Promise<string> {
+  if (!folderId || !fileName) return '';
+  try {
+    const folderUrl = `https://drive.google.com/drive/folders/${encodeURIComponent(folderId)}?t=${Date.now()}`;
+    const res = await fetch(folderUrl, { cache: 'no-store' });
+    if (!res.ok) return '';
+    const text = await res.text();
+    const cleanTarget = fileName.replace(/\.[^/.]+$/, '').trim(); // e.g. "EE-IFE-159" or "EE-IFB-001"
+    if (!cleanTarget) return '';
+
+    const idx = text.indexOf(cleanTarget);
+    if (idx !== -1) {
+      const chunk = text.slice(Math.max(0, idx - 400), idx + 400);
+      // Pattern 1: ssk='5:auSv138:1k5SOnlBSWF8cdDwSTiZzb8WnCNvxrHd1-0-16'
+      const sskMatch = chunk.match(/ssk=['"][^:]*:[^:]*:([a-zA-Z0-9_-]{20,})/);
+      if (sskMatch && sskMatch[1]) {
+        const rawId = sskMatch[1].split('-')[0];
+        if (rawId.length >= 20) {
+          return `https://drive.google.com/file/d/${rawId}/view?usp=drivesdk`;
+        }
+      }
+      // Pattern 2: direct file ID in data attribute or quotes
+      const idMatch = chunk.match(/"(1[a-zA-Z0-9_-]{27,33})"/);
+      if (idMatch && idMatch[1]) {
+        return `https://drive.google.com/file/d/${idMatch[1]}/view?usp=drivesdk`;
+      }
+    }
+  } catch (err) {
+    console.warn('Folder URL recovery notice:', err);
+  }
+  return '';
+}
+
+/**
+ * Reliable HTTP POST to Google Apps Script Web App with timeout, Drive URL auto-detection, and auto-retry
  */
 async function postToAppsScriptWithRetry(
   endpoint: string,
   payload: Record<string, any>,
-  maxRetries = 2,
-  timeoutMs = 45000
+  maxRetries = 3,
+  timeoutMs = 75000
 ): Promise<any> {
   let lastError: any = null;
 
@@ -300,6 +355,11 @@ async function postToAppsScriptWithRetry(
           const json = JSON.parse(text);
           return json;
         } catch {
+          // If response text is not clean JSON, search for a Drive URL or ID inside it
+          const urlMatch = text.match(/https?:\/\/(?:drive|docs)\.google\.com\/[^\s"'<>\\]+/i);
+          if (urlMatch) {
+            return { success: true, url: urlMatch[0] };
+          }
           if (text.startsWith('http://') || text.startsWith('https://')) {
             return { success: true, url: text.trim() };
           }
@@ -311,12 +371,13 @@ async function postToAppsScriptWithRetry(
     } catch (err: any) {
       clearTimeout(timer);
       lastError = err;
-      console.warn(`Apps Script request (${payload.action}) attempt ${attempt} warning:`, err?.message || err);
+      console.warn(`Apps Script request (${payload.action}) attempt ${attempt} notice:`, err?.message || err);
     }
 
     if (attempt < maxRetries) {
-      // Pause briefly before retrying
-      await new Promise((r) => setTimeout(r, 1500));
+      // Pause briefly with exponential backoff before retrying
+      const delayMs = attempt === 1 ? 1500 : 3000;
+      await new Promise((r) => setTimeout(r, delayMs));
     }
   }
 
@@ -395,8 +456,8 @@ export async function uploadSingleImageToDrive(
           photoIndex,
           folderId: DRIVE_PHOTO_FOLDER_ID
         },
-        2,
-        45000
+        3,
+        75000
       );
 
       const resolvedUrl = extractDriveUrl(data);
@@ -459,6 +520,10 @@ export async function uploadPdfToDrive(
   const endpoint = getAppsScriptUrl();
   if (endpoint) {
     try {
+      const pdfColLetter = machineType === 'ENGINE' ? ENGINE_PDF_COLUMN_LETTER : BATTERY_PDF_COLUMN_LETTER; // 'CR' or 'CJ'
+      const pdfColIndex = machineType === 'ENGINE' ? 96 : 88;
+      const targetSheet = machineType === 'ENGINE' ? SHEET_NAME_ENGINE : SHEET_NAME_BATTERY;
+
       const data = await postToAppsScriptWithRetry(
         endpoint,
         {
@@ -467,13 +532,34 @@ export async function uploadPdfToDrive(
           folderId: targetFolderId,
           fileName: fileName,
           machineType,
-          formNo
+          formNo,
+          spreadsheetId: SPREADSHEET_ID,
+          sheetName: targetSheet,
+          // Explicit column parameters so Apps Script writes directly to CJ (Battery) or CR (Engine)
+          pdfColumnLetter: pdfColLetter,
+          columnLetter: pdfColLetter,
+          pdfColumn: pdfColLetter,
+          targetColumn: pdfColLetter,
+          column: pdfColLetter,
+          col: pdfColLetter,
+          pdfCol: pdfColLetter,
+          pdfColumnIndex: pdfColIndex,
+          columnIndex: pdfColIndex,
+          colIndex: pdfColIndex,
+          targetHeader: 'PDF',
+          pdfHeader: 'PDF',
+          headerName: 'PDF'
         },
-        2,
-        50000
+        3,
+        90000
       );
 
-      const resolvedUrl = extractDriveUrl(data);
+      let resolvedUrl = extractDriveUrl(data);
+      if (!resolvedUrl) {
+        // Fallback: check if the file was created in Google Drive folder
+        resolvedUrl = await recoverDriveFileUrl(targetFolderId, fileName);
+      }
+
       if (resolvedUrl) {
         return { success: true, url: resolvedUrl, filename: fileName, ...data };
       }
@@ -482,7 +568,18 @@ export async function uploadPdfToDrive(
       }
     } catch (err: any) {
       console.warn('Web App URL PDF upload notice:', err);
+      // Fallback: Check if file was actually saved to Drive before network dropped
+      const recoveredUrl = await recoverDriveFileUrl(targetFolderId, fileName);
+      if (recoveredUrl) {
+        return { success: true, url: recoveredUrl, filename: fileName };
+      }
     }
+  }
+
+  // Last attempt: Check if the PDF file exists in Google Drive folder
+  const recoveredUrl = await recoverDriveFileUrl(targetFolderId, fileName);
+  if (recoveredUrl) {
+    return { success: true, url: recoveredUrl, filename: fileName };
   }
 
   return { success: false, url: '', error: 'Failed to obtain PDF Drive URL' };
@@ -567,14 +664,45 @@ export async function saveInspectionToGoogleSheet(
     '12. DATA PLATES': safePictures['DATA_PLATES'] || '',
     '13. PLATFORM BASKET': safePictures['PLATFORM_BASKET'] || '',
     '14. JIB STRUCTURE (if applicable)': safePictures['JIB_STRUCTURE'] || '',
+    '14. JIB STRUCTURE': safePictures['JIB_STRUCTURE'] || '',
+    // Photo 15: CABLE TRACK (Column CH in Battery, Column CP in Engine)
+    '15. CABLE TRACK': safePictures['CABLE_TRACK'] || '',
     '15. CABLE TRACK (IF APPLICABLE)': safePictures['CABLE_TRACK'] || '',
+    '15. CABLE TRACK (if applicable)': safePictures['CABLE_TRACK'] || '',
+    CABLE_TRACK: safePictures['CABLE_TRACK'] || '',
+    // Photo 16: GROUND CONTROL PANEL (Column CI in Battery, Column CQ in Engine)
     '16. GROUND CONTROL PANEL': safePictures['GROUND_CONTROL_PANEL'] || '',
+    '16. GROUND CONTROL PANEL (IF APPLICABLE)': safePictures['GROUND_CONTROL_PANEL'] || '',
+    GROUND_CONTROL_PANEL: safePictures['GROUND_CONTROL_PANEL'] || '',
+    // Direct Column Letter mappings so Apps Script receives the links under column letters
+    ...(payload.machineType === 'ENGINE'
+      ? {
+          CP: safePictures['CABLE_TRACK'] || '', // Column 94 (15. CABLE TRACK)
+          CQ: safePictures['GROUND_CONTROL_PANEL'] || '', // Column 95 (16. GROUND CONTROL PANEL)
+          CR: cleanPdfUrl, // Column 96 (PDF)
+          col94: safePictures['CABLE_TRACK'] || '',
+          col95: safePictures['GROUND_CONTROL_PANEL'] || '',
+          col96: cleanPdfUrl
+        }
+      : {
+          CH: safePictures['CABLE_TRACK'] || '', // Column 86 (15. CABLE TRACK)
+          CI: safePictures['GROUND_CONTROL_PANEL'] || '', // Column 87 (16. GROUND CONTROL PANEL)
+          CJ: cleanPdfUrl, // Column 88 (PDF)
+          col86: safePictures['CABLE_TRACK'] || '',
+          col87: safePictures['GROUND_CONTROL_PANEL'] || '',
+          col88: cleanPdfUrl
+        }),
     // PDF URLs under all common column names / aliases
     PDF: cleanPdfUrl,
     pdfUrl: cleanPdfUrl,
     pdf_url: cleanPdfUrl,
     PDF_URL: cleanPdfUrl,
     pdfLink: cleanPdfUrl,
+    pdfColumnLetter: payload.machineType === 'ENGINE' ? 'CR' : 'CJ',
+    columnLetter: payload.machineType === 'ENGINE' ? 'CR' : 'CJ',
+    pdfColumn: payload.machineType === 'ENGINE' ? 'CR' : 'CJ',
+    targetColumn: payload.machineType === 'ENGINE' ? 'CR' : 'CJ',
+    pdfColumnIndex: payload.machineType === 'ENGINE' ? 96 : 88,
     overallComment: payload.overallComment,
     inspectionStatus: payload.inspectionStatus,
     technicianName: payload.technicianName,
@@ -609,8 +737,8 @@ export async function saveInspectionToGoogleSheet(
           action: 'saveInspection',
           ...flatData
         },
-        2,
-        50000
+        3,
+        75000
       );
 
       if (data && data.success) {

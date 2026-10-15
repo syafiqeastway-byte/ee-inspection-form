@@ -61,8 +61,11 @@ import {
   uploadPdfToDrive,
   saveInspectionToGoogleSheet,
   extractDriveUrl,
+  recoverDriveFileUrl,
   hasGoogleScriptRun,
-  SPREADSHEET_ID
+  SPREADSHEET_ID,
+  DRIVE_BATTERY_PDF_FOLDER_ID,
+  DRIVE_ENGINE_PDF_FOLDER_ID
 } from './services/backendApi';
 
 import { generateInspectionPdf } from './utils/pdfGenerator';
@@ -625,21 +628,22 @@ export default function App() {
       console.warn('Real-time form number check notice:', formNoErr);
     }
 
-    // 1. Sequential upload of active images to Google Drive with progress counter (1/14, 2/14, etc.)
+    // 1. Sequential upload of active images to Google Drive with progress counter (1/16, 2/16, etc.)
     for (let i = 0; i < totalPhotos; i++) {
       const cfg = photosToUpload[i];
-      const photoIdx = i + 1;
-      const percent = Math.round(5 + (photoIdx / (totalPhotos + 3)) * 70);
+      const photoIdx = currentPictureConfigs.findIndex((c) => c.key === cfg.key) + 1;
+      const progressCount = i + 1;
+      const percent = Math.round(5 + (progressCount / (totalPhotos + 3)) * 70);
 
       setSubmitProgress({
         step: 'photo',
-        currentPhotoIndex: photoIdx,
+        currentPhotoIndex: progressCount,
         totalPhotos: totalPhotos,
         currentPhotoLabel: cfg.label,
         percent: percent,
-        statusMessage: `Uploading Pictures (${photoIdx}/${totalPhotos}): ${cfg.label}`
+        statusMessage: `Uploading Pictures (${progressCount}/${totalPhotos}): ${cfg.label}`
       });
-      setSubmitProgressText(`UPLOADING PICTURES (${photoIdx}/${totalPhotos})...`);
+      setSubmitProgressText(`UPLOADING PICTURES (${progressCount}/${totalPhotos})...`);
 
       const base64Data = pictures[cfg.key];
       if (base64Data) {
@@ -656,22 +660,26 @@ export default function App() {
     }
 
     // Auto-retry pass for any photo that missed a Drive URL on the first attempt
-    const pendingPhotos = photosToUpload.filter(
-      (cfg) => !uploadedUrlMap[cfg.key] || !uploadedUrlMap[cfg.key].startsWith('http')
-    );
-    for (const cfg of pendingPhotos) {
-      const photoIdx = photosToUpload.findIndex((p) => p.key === cfg.key) + 1;
-      const base64Data = pictures[cfg.key];
-      if (base64Data) {
-        try {
-          setSubmitProgressText(`RETRYING PHOTO (${photoIdx}/${totalPhotos})...`);
-          const retryRes = await uploadSingleImageToDrive(base64Data, cfg.key, pmaNumber, photoIdx, inspectionDate);
-          const retryUrl = extractDriveUrl(retryRes);
-          if (retryUrl) {
-            uploadedUrlMap[cfg.key] = retryUrl;
+    for (let retryPass = 1; retryPass <= 2; retryPass++) {
+      const pendingPhotos = photosToUpload.filter(
+        (cfg) => !uploadedUrlMap[cfg.key] || !uploadedUrlMap[cfg.key].startsWith('http')
+      );
+      if (pendingPhotos.length === 0) break;
+
+      for (const cfg of pendingPhotos) {
+        const photoIdx = currentPictureConfigs.findIndex((c) => c.key === cfg.key) + 1;
+        const base64Data = pictures[cfg.key];
+        if (base64Data) {
+          try {
+            setSubmitProgressText(`RETRYING PHOTO (${photoIdx}/${currentPictureConfigs.length})...`);
+            const retryRes = await uploadSingleImageToDrive(base64Data, cfg.key, pmaNumber, photoIdx, inspectionDate);
+            const retryUrl = extractDriveUrl(retryRes);
+            if (retryUrl) {
+              uploadedUrlMap[cfg.key] = retryUrl;
+            }
+          } catch (retryErr) {
+            console.warn(`Retry pass ${retryPass} upload failed for ${cfg.key}:`, retryErr);
           }
-        } catch (retryErr) {
-          console.warn(`Retry upload failed for ${cfg.key}:`, retryErr);
         }
       }
     }
@@ -727,18 +735,34 @@ export default function App() {
       });
       setSubmitProgressText('UPLOADING PDF TO GOOGLE DRIVE...');
 
+      const targetFolderId = machineType === 'ENGINE' ? DRIVE_ENGINE_PDF_FOLDER_ID : DRIVE_BATTERY_PDF_FOLDER_ID;
+      const pdfFileName = `${activeFormNo.trim().toUpperCase()}.pdf`;
+
       const pdfUploadRes = await uploadPdfToDrive(pdfResult.base64, machineType, activeFormNo);
       pdfUrl = extractDriveUrl(pdfUploadRes);
 
-      // Auto-retry PDF upload if Drive URL was not captured
+      // Auto-recovery / retry PDF upload if Drive URL was not captured
       if (!pdfUrl) {
-        console.warn('PDF Drive URL missing, retrying PDF upload...');
+        console.warn('PDF Drive URL missing in response, recovering from Google Drive folder...');
+        setSubmitProgressText('RECOVERING PDF URL FROM GOOGLE DRIVE...');
+        pdfUrl = await recoverDriveFileUrl(targetFolderId, pdfFileName);
+      }
+
+      if (!pdfUrl) {
+        console.warn('PDF Drive URL not found in folder yet, retrying upload...');
         setSubmitProgressText('RETRYING PDF UPLOAD TO GOOGLE DRIVE...');
         const retryPdfRes = await uploadPdfToDrive(pdfResult.base64, machineType, activeFormNo);
         pdfUrl = extractDriveUrl(retryPdfRes);
+
+        if (!pdfUrl) {
+          // Final folder check in case the retry was placed in Drive before response finished
+          pdfUrl = await recoverDriveFileUrl(targetFolderId, pdfFileName);
+        }
       }
     } catch (pdfErr) {
       console.warn('PDF generation/upload notice:', pdfErr);
+      const targetFolderId = machineType === 'ENGINE' ? DRIVE_ENGINE_PDF_FOLDER_ID : DRIVE_BATTERY_PDF_FOLDER_ID;
+      pdfUrl = await recoverDriveFileUrl(targetFolderId, `${activeFormNo.trim().toUpperCase()}.pdf`);
     }
 
     setSubmitProgress({
