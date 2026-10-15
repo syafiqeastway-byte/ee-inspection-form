@@ -17,14 +17,19 @@ export const DRIVE_BATTERY_PDF_FOLDER_ID = '1h7uOhq76kforMFskOmI3w6OI-dbUFBbp';
 export const DRIVE_ENGINE_PDF_FOLDER_ID = '1h5R0mlozLV76MrL9fb4mZzf8Xap6hOv8';
 
 export const DEFAULT_APPS_SCRIPT_URL =
-  'https://script.google.com/macros/s/AKfycbxWHZqtd22rhJqs0BQNxTq8DKl5kCWMqubPYzW7E7n_7WQxmKqVESTTOzo28PwVJwny/exec';
+  'https://script.google.com/macros/s/AKfycbyonS0dXMu3Gw6QJNbHL7-lR-t_vB79Hu4NOzP9OC4zR2WWziAUo5AxCCUXAdZIqee6/exec';
 
 // Configurable Webhook URL for Google Apps Script Web App Deployment
 export function getAppsScriptUrl(): string {
   if (typeof window !== 'undefined') {
     const local = localStorage.getItem('eastway_apps_script_url');
     // If user has old default cached in localStorage, automatically upgrade to new URL
-    if (local && (local.includes('AKfycbwg3mNH3xYeeaMlsTdR') || local.trim() === '')) {
+    if (
+      local &&
+      (local.includes('AKfycbwg3mNH3xYeeaMlsTdR') ||
+        local.includes('AKfycbxWHZqtd22rhJqs0BQNxTq8DKl5kCWMqubPYzW7E7n_7WQxmKqVESTTOzo28PwVJwny') ||
+        local.trim() === '')
+    ) {
       localStorage.setItem('eastway_apps_script_url', DEFAULT_APPS_SCRIPT_URL);
       return DEFAULT_APPS_SCRIPT_URL;
     }
