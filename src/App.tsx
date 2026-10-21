@@ -235,13 +235,12 @@ export default function App() {
 
   // Initialize DB and Form Number
   useEffect(() => {
-    // Auto-update date and time
-    const updateDateTime = () => {
-      setInspectionDate(getTodayDate());
+    // Auto-update time periodically without resetting user's chosen inspection date
+    const updateTime = () => {
       setInspectionTime(getCurrentTime());
     };
-    updateDateTime();
-    const timer = setInterval(updateDateTime, 10000);
+    updateTime();
+    const timer = setInterval(updateTime, 10000);
 
     // Load PMA database from local storage initially
     const dbs = getStoredPmaDatabase();
