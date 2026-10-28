@@ -2,6 +2,37 @@ import { jsPDF } from 'jspdf';
 import { SavedInspectionRecord } from '../types/inspection';
 import { batterySections, engineSections, batteryPictureFieldsConfig, enginePictureFieldsConfig } from '../data/inspectionConfig';
 
+async function getLogoDataUrl(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  const sources = ['/ee-logo.png', '/EE%20LOGO.png', '/EE LOGO.png'];
+  for (const src of sources) {
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width || 200;
+          canvas.height = img.naturalHeight || img.height || 200;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
+          } else {
+            reject(new Error('Canvas context null'));
+          }
+        };
+        img.onerror = () => reject(new Error('Failed to load logo source: ' + src));
+        img.src = src;
+      });
+      if (dataUrl) return dataUrl;
+    } catch {
+      // try next source
+    }
+  }
+  return null;
+}
+
 /**
  * Generates a clean, professional vector PDF document of the inspection form.
  * Features:
@@ -10,6 +41,8 @@ import { batterySections, engineSections, batteryPictureFieldsConfig, enginePict
  * - Red text color for 'NOT OK', 'FAILED', and 'FAILED AND MISUSE'
  */
 export async function generateInspectionPdf(record: SavedInspectionRecord): Promise<{ base64: string; blob: Blob }> {
+  const logoDataUrl = await getLogoDataUrl();
+
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -27,15 +60,33 @@ export async function generateInspectionPdf(record: SavedInspectionRecord): Prom
     doc.setFillColor(30, 41, 59); // Slate 800
     doc.rect(margin, y, contentWidth, isSubsequentPage ? 12 : 22, 'F');
 
+    let textStartX = margin + 4;
+
+    if (logoDataUrl) {
+      try {
+        if (!isSubsequentPage) {
+          // First page header logo: 16mm x 16mm on left of header text
+          doc.addImage(logoDataUrl, 'PNG', margin + 3, y + 3, 16, 16, undefined, 'FAST');
+          textStartX = margin + 22;
+        } else {
+          // Subsequent pages header logo: 9mm x 9mm
+          doc.addImage(logoDataUrl, 'PNG', margin + 2, y + 1.5, 9, 9, undefined, 'FAST');
+          textStartX = margin + 14;
+        }
+      } catch (err) {
+        console.warn('Failed to render EE LOGO in PDF header:', err);
+      }
+    }
+
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(isSubsequentPage ? 10 : 13);
-    doc.text('EASYWAY ENGINEERING', margin + 4, y + (isSubsequentPage ? 8 : 8.5));
+    doc.text('EASYWAY ENGINEERING', textStartX, y + (isSubsequentPage ? 8 : 8.5));
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     if (!isSubsequentPage) {
-      doc.text(`MACHINE INSPECTION FORM (${record.machineType} TYPE)`, margin + 4, y + 16);
+      doc.text(`MACHINE INSPECTION FORM (${record.machineType} TYPE)`, textStartX, y + 16);
       doc.setFont('helvetica', 'bold');
       doc.text(`FORM NO: ${record.formNo}`, pageWidth - margin - 4, y + 8.5, { align: 'right' });
       doc.setFont('helvetica', 'normal');
