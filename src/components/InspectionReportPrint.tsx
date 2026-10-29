@@ -112,7 +112,7 @@ export const InspectionReportPrint: React.FC<InspectionReportPrintProps> = ({ re
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl sm:text-2xl font-black tracking-tight uppercase">
-                    EASYWAY ENGINEERING
+                    EASTWAY ENGINEERING
                   </h1>
                 </div>
                 <p className="text-xs sm:text-sm font-normal text-slate-300 mt-0.5 uppercase tracking-wider">

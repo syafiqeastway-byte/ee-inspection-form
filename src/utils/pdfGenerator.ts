@@ -81,7 +81,7 @@ export async function generateInspectionPdf(record: SavedInspectionRecord): Prom
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(isSubsequentPage ? 10 : 13);
-    doc.text('EASYWAY ENGINEERING', textStartX, y + (isSubsequentPage ? 8 : 8.5));
+    doc.text('EASTWAY ENGINEERING', textStartX, y + (isSubsequentPage ? 8 : 8.5));
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);

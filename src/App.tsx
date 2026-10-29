@@ -963,7 +963,7 @@ export default function App() {
               </div>
               <div>
                 <h1 className="text-lg sm:text-xl font-black uppercase tracking-wide text-white">
-                  EASYWAY ENGINEERING
+                  EASTWAY ENGINEERING
                 </h1>
                 <p className="text-xs sm:text-sm font-normal text-slate-200 tracking-wider">
                   MACHINE INSPECTION FORM
