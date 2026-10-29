@@ -1,6 +1,12 @@
-import { MachineType, PmaRecord, SavedInspectionRecord } from '../types/inspection';
+import { MachineType, PmaRecord, SavedInspectionRecord, ChecklistStatus } from '../types/inspection';
 import { getStoredPmaDatabase } from '../data/pmaDatabase';
 import { generateNextFormNumber } from '../utils/formNumberGenerator';
+import {
+  batterySections,
+  engineSections,
+  batteryPictureFieldsConfig,
+  enginePictureFieldsConfig
+} from '../data/inspectionConfig';
 
 // Google Sheet IDs & Configuration
 export const SPREADSHEET_ID = '1jJXC-sS3ONnnFX-2MoDCkjxHm-Mh9Pr1RWuXEtangCc';
@@ -758,3 +764,305 @@ export async function saveInspectionToGoogleSheet(
   // Fallback: stored locally
   return { success: true, formNo: payload.formNo };
 }
+
+/**
+ * Parses standard CSV text with quoted newlines into a 2D array of cells.
+ */
+function parseCsvRows(csvText: string): string[][] {
+  const rows: string[][] = [];
+  let cur: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < csvText.length; i++) {
+    const c = csvText[i];
+    if (inQuotes) {
+      if (c === '"' && csvText[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else if (c === '"') {
+        inQuotes = false;
+      } else {
+        field += c;
+      }
+    } else {
+      if (c === '"') {
+        inQuotes = true;
+      } else if (c === ',') {
+        cur.push(field);
+        field = '';
+      } else if (c === '\n' || c === '\r') {
+        if (c === '\r' && csvText[i + 1] === '\n') i++;
+        cur.push(field);
+        field = '';
+        rows.push(cur);
+        cur = [];
+      } else {
+        field += c;
+      }
+    }
+  }
+  if (cur.length > 0) rows.push(cur);
+  return rows;
+}
+
+/**
+ * Maps a single Google Sheet row into a full SavedInspectionRecord.
+ */
+function mapSheetRowToInspectionRecord(row: string[], machineType: MachineType): SavedInspectionRecord {
+  const formNo = (row[0] || '').trim();
+  const timestamp = (row[1] || '').trim();
+  const typeOfInspection = (row[2] || '1ST INSPECTION') as any;
+  const pmaNumber = (row[3] || '').trim();
+  const brand = (row[4] || '').trim();
+  const model = (row[5] || '').trim();
+  const serial = (row[6] || '').trim();
+  const hourMeter = (row[7] || '').trim();
+  const machineLocation = (row[8] || 'IJOK WAREHOUSE') as any;
+  const siteLocation = (row[9] || 'NA').trim();
+
+  // Find status index dynamically
+  let statusIdx = -1;
+  for (let i = 10; i < row.length; i++) {
+    const v = (row[i] || '').trim().toUpperCase();
+    if (v === 'PASS' || v === 'FAILED' || v === 'FAILED & MISUSE') {
+      statusIdx = i;
+      break;
+    }
+  }
+
+  const inspectionStatus = (statusIdx !== -1 ? row[statusIdx].trim() : 'PASS') as any;
+  const overallComment = statusIdx > 0 ? (row[statusIdx - 1] || '').trim() : '';
+  const technicianName = statusIdx !== -1 && row[statusIdx + 1] ? (row[statusIdx + 1] || '').trim() : 'Inspector';
+  const inspectionDate =
+    statusIdx !== -1 && row[statusIdx + 2]
+      ? (row[statusIdx + 2] || '').trim()
+      : timestamp.split(' ')[0] || '';
+  const inspectionTime =
+    statusIdx !== -1 && row[statusIdx + 3] && !row[statusIdx + 3].includes('http')
+      ? (row[statusIdx + 3] || '').trim()
+      : timestamp.split(' ')[1] || '12:00';
+
+  // Parse checklist and section comments
+  const checklistAnswers: Record<string, ChecklistStatus> = {};
+  const sectionComments: Record<string, string> = {};
+  const sections = machineType === 'ENGINE' ? engineSections : batterySections;
+
+  let colPointer = 10;
+  for (const sec of sections) {
+    for (const item of sec.items) {
+      if (colPointer < (statusIdx !== -1 ? statusIdx - 1 : row.length)) {
+        const val = (row[colPointer] || '').trim().toUpperCase();
+        if (val === 'NOT OK' || val === 'NOTOK' || val === 'FAILED') {
+          checklistAnswers[item.name] = 'NOT OK';
+        } else if (val === 'N/A' || val === 'NA') {
+          checklistAnswers[item.name] = 'N/A';
+        } else if (val === 'OK') {
+          checklistAnswers[item.name] = 'OK';
+        } else if (val) {
+          checklistAnswers[item.name] = val as any;
+        } else {
+          checklistAnswers[item.name] = 'OK';
+        }
+        colPointer++;
+      }
+    }
+    // Section comment column
+    if (colPointer < (statusIdx !== -1 ? statusIdx - 1 : row.length)) {
+      sectionComments[sec.commentName] = (row[colPointer] || '').trim();
+      colPointer++;
+    }
+  }
+
+  // Parse pictures & PDF links
+  const pictures: Record<string, string> = {};
+  const picConfigs = machineType === 'ENGINE' ? enginePictureFieldsConfig : batteryPictureFieldsConfig;
+  const driveLinks: string[] = [];
+
+  for (let i = Math.max(statusIdx !== -1 ? statusIdx + 1 : 10, 10); i < row.length; i++) {
+    const val = (row[i] || '').trim();
+    if (val.startsWith('http://') || val.startsWith('https://')) {
+      driveLinks.push(val);
+    }
+  }
+
+  let pdfUrl = '';
+  if (driveLinks.length > 0) {
+    const last = driveLinks[driveLinks.length - 1];
+    if (last.includes('/file/d/') || last.toLowerCase().includes('.pdf') || driveLinks.length > 10) {
+      pdfUrl = last;
+      const photoLinks = driveLinks.slice(0, driveLinks.length - 1);
+      photoLinks.forEach((link, idx) => {
+        if (picConfigs[idx]) {
+          pictures[picConfigs[idx].key] = link;
+        }
+      });
+    } else {
+      driveLinks.forEach((link, idx) => {
+        if (picConfigs[idx]) {
+          pictures[picConfigs[idx].key] = link;
+        }
+      });
+    }
+  }
+
+  return {
+    id: `remote_${formNo.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`,
+    formNo,
+    machineType,
+    typeOfInspection,
+    pmaNumber,
+    brand,
+    model,
+    serial,
+    hourMeter,
+    machineLocation,
+    siteLocation,
+    checklistAnswers,
+    sectionComments,
+    pictures,
+    overallComment,
+    inspectionStatus,
+    technicianName,
+    inspectionDate,
+    inspectionTime,
+    submittedAt: timestamp || new Date().toISOString(),
+    pdfUrl
+  };
+}
+
+export interface PreviousFormOption {
+  formNo: string;
+  machineType: MachineType;
+  pmaNumber: string;
+  brand: string;
+  model: string;
+  date: string;
+  status: string;
+}
+
+/**
+ * Searches and parses a previous inspection form from Google Sheets or local cache.
+ * Accepts any format: "EE-IFE-89", "EE IFE 89", "EEIFE89", "EE-IFB-776", etc.
+ */
+export async function fetchInspectionRecordByFormNo(
+  formNoQuery: string,
+  localRecords: SavedInspectionRecord[] = []
+): Promise<SavedInspectionRecord | null> {
+  const queryRaw = formNoQuery.trim();
+  if (!queryRaw) return null;
+  const cleanQuery = queryRaw.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+  // 1. Search local saved inspections first
+  for (const rec of localRecords) {
+    const localClean = rec.formNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    if (localClean === cleanQuery || localClean.replace(/([A-Z]+)0*(\d+)/, '$1$2') === cleanQuery.replace(/([A-Z]+)0*(\d+)/, '$1$2')) {
+      return rec;
+    }
+  }
+
+  // 2. Fetch from Google Sheets
+  const sheetsToSearch: Array<{ name: string; type: MachineType }> = [];
+  if (cleanQuery.includes('IFE')) {
+    sheetsToSearch.push({ name: SHEET_NAME_ENGINE, type: 'ENGINE' });
+    sheetsToSearch.push({ name: SHEET_NAME_BATTERY, type: 'BATTERY' });
+  } else if (cleanQuery.includes('IFB')) {
+    sheetsToSearch.push({ name: SHEET_NAME_BATTERY, type: 'BATTERY' });
+    sheetsToSearch.push({ name: SHEET_NAME_ENGINE, type: 'ENGINE' });
+  } else {
+    sheetsToSearch.push({ name: SHEET_NAME_ENGINE, type: 'ENGINE' });
+    sheetsToSearch.push({ name: SHEET_NAME_BATTERY, type: 'BATTERY' });
+  }
+
+  for (const target of sheetsToSearch) {
+    try {
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(target.name)}&t=${Date.now()}`;
+      const res = await fetch(gvizUrl, { method: 'GET', cache: 'no-store' });
+      if (!res.ok) continue;
+
+      const csvText = await res.text();
+      const rows = parseCsvRows(csvText);
+      if (rows.length <= 1) continue;
+
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        const rowFormNo = (row[0] || '').trim();
+        const rowClean = rowFormNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+        const isExactMatch =
+          rowClean === cleanQuery ||
+          rowClean.replace(/([A-Z]+)0*(\d+)/, '$1$2') === cleanQuery.replace(/([A-Z]+)0*(\d+)/, '$1$2');
+
+        if (isExactMatch) {
+          return mapSheetRowToInspectionRecord(row, target.type);
+        }
+      }
+    } catch (err) {
+      console.warn(`Error querying sheet ${target.name}:`, err);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Fetches available inspection forms list across local history and Google Sheets.
+ */
+export async function fetchAvailableInspectionList(
+  localRecords: SavedInspectionRecord[] = []
+): Promise<PreviousFormOption[]> {
+  const optionsMap = new Map<string, PreviousFormOption>();
+
+  // Add from local storage first
+  for (const rec of localRecords) {
+    if (rec.formNo) {
+      const key = rec.formNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      optionsMap.set(key, {
+        formNo: rec.formNo,
+        machineType: rec.machineType,
+        pmaNumber: rec.pmaNumber,
+        brand: rec.brand,
+        model: rec.model,
+        date: rec.inspectionDate || '',
+        status: rec.inspectionStatus || 'PASS'
+      });
+    }
+  }
+
+  // Fetch recent from both sheets
+  for (const sheet of [
+    { name: SHEET_NAME_ENGINE, type: 'ENGINE' as MachineType },
+    { name: SHEET_NAME_BATTERY, type: 'BATTERY' as MachineType }
+  ]) {
+    try {
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet.name)}&t=${Date.now()}`;
+      const res = await fetch(gvizUrl, { method: 'GET', cache: 'no-store' });
+      if (!res.ok) continue;
+
+      const csvText = await res.text();
+      const rows = parseCsvRows(csvText);
+      // Iterate from newest to oldest
+      for (let r = rows.length - 1; r >= 1; r--) {
+        const row = rows[r];
+        const formNo = (row[0] || '').trim();
+        if (!formNo) continue;
+        const key = formNo.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        if (!optionsMap.has(key)) {
+          optionsMap.set(key, {
+            formNo,
+            machineType: sheet.type,
+            pmaNumber: (row[3] || '').trim(),
+            brand: (row[4] || '').trim(),
+            model: (row[5] || '').trim(),
+            date: (row[1] || '').split(' ')[0] || '',
+            status: 'RECORDED'
+          });
+        }
+      }
+    } catch {
+      // Continue
+    }
+  }
+
+  return Array.from(optionsMap.values());
+}
+

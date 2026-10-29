@@ -2,6 +2,62 @@ import { jsPDF } from 'jspdf';
 import { SavedInspectionRecord } from '../types/inspection';
 import { batterySections, engineSections, batteryPictureFieldsConfig, enginePictureFieldsConfig } from '../data/inspectionConfig';
 
+export async function convertImageUrlToDataUrl(url: string): Promise<string | null> {
+  if (!url) return null;
+  if (url.startsWith('data:image')) return url;
+
+  let fileId = '';
+  const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  const pathMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (idMatch) fileId = idMatch[1];
+  else if (pathMatch) fileId = pathMatch[1];
+
+  const directUrl = fileId ? `https://lh3.googleusercontent.com/d/${fileId}` : url;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width || 800;
+          canvas.height = img.naturalHeight || img.height || 600;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/jpeg', 0.85));
+          } else {
+            reject(new Error('Canvas ctx null'));
+          }
+        };
+        img.onerror = () => reject(new Error('Image load error'));
+        img.src = directUrl;
+      });
+      if (dataUrl) return dataUrl;
+    } catch {
+      // try fetch fallback
+    }
+  }
+
+  try {
+    const res = await fetch(directUrl);
+    if (res.ok) {
+      const blob = await res.blob();
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
 async function getLogoDataUrl(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
   const sources = ['/ee-logo.png', '/EE%20LOGO.png', '/EE LOGO.png'];
@@ -322,7 +378,24 @@ export async function generateInspectionPdf(record: SavedInspectionRecord): Prom
 
   // 4. Photos Section (2-Column Grid: Gambar Kiri dan Kanan)
   const picConfigs = record.machineType === 'ENGINE' ? enginePictureFieldsConfig : batteryPictureFieldsConfig;
-  const validPhotos = picConfigs.filter((c) => record.pictures && record.pictures[c.key]);
+
+  // Convert HTTP Drive image URLs in record.pictures to Base64 Data URLs for PDF embedding
+  const processedPictures: Record<string, string> = { ...(record.pictures || {}) };
+  if (record.pictures) {
+    await Promise.all(
+      picConfigs.map(async (cfg) => {
+        const src = record.pictures[cfg.key];
+        if (src && src.startsWith('http')) {
+          const converted = await convertImageUrlToDataUrl(src);
+          if (converted) {
+            processedPictures[cfg.key] = converted;
+          }
+        }
+      })
+    );
+  }
+
+  const validPhotos = picConfigs.filter((c) => processedPictures[c.key]);
 
   if (validPhotos.length > 0) {
     checkPageBreak(20);
@@ -345,7 +418,7 @@ export async function generateInspectionPdf(record: SavedInspectionRecord): Prom
 
     for (let i = 0; i < validPhotos.length; i++) {
       const photoCfg = validPhotos[i];
-      const imgData = record.pictures[photoCfg.key];
+      const imgData = processedPictures[photoCfg.key];
       const colIndex = i % cols;
 
       if (colIndex === 0 && i !== 0) {

@@ -20,7 +20,8 @@ import {
   PlusCircle,
   RefreshCw,
   Key,
-  X
+  X,
+  Download
 } from 'lucide-react';
 
 import {
@@ -77,6 +78,7 @@ import { InspectionHistoryModal } from './components/InspectionHistoryModal';
 import { InspectionReportPrint } from './components/InspectionReportPrint';
 import { PmaManagerModal } from './components/PmaManagerModal';
 import { ManualsViewerModal } from './components/ManualsViewerModal';
+import { DownloadPreviousFormModal } from './components/DownloadPreviousFormModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 
 const LOCAL_STORAGE_INSPECTIONS_KEY = 'eastway_inspections_history_v1';
@@ -168,6 +170,8 @@ export default function App() {
 
   // App Navigation & Modals
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'pma' | 'manuals'>('form');
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [returnToDownloadModal, setReturnToDownloadModal] = useState(false);
   const [savedInspections, setSavedInspections] = useState<SavedInspectionRecord[]>([]);
   const [selectedRecordForReport, setSelectedRecordForReport] = useState<SavedInspectionRecord | null>(null);
 
@@ -894,7 +898,13 @@ export default function App() {
     return (
       <InspectionReportPrint
         record={selectedRecordForReport}
-        onBack={() => setSelectedRecordForReport(null)}
+        onBack={() => {
+          setSelectedRecordForReport(null);
+          if (returnToDownloadModal) {
+            setIsDownloadModalOpen(true);
+            setReturnToDownloadModal(false);
+          }
+        }}
       />
     );
   }
@@ -989,9 +999,20 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Form No. (Auto-Generated)
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Form No. (Auto-Generated)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsDownloadModalOpen(true)}
+                      className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 hover:underline cursor-pointer"
+                      title="Download previous inspection PDF like EE-IFE-89"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Download Previous PDF</span>
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={formNo}
@@ -1563,6 +1584,19 @@ export default function App() {
       />
 
 
+
+      {/* Download Previous Inspection Form PDF Modal */}
+      <DownloadPreviousFormModal
+        isOpen={isDownloadModalOpen}
+        onClose={() => setIsDownloadModalOpen(false)}
+        localRecords={savedInspections}
+        onViewRecord={(rec) => {
+          setSelectedRecordForReport(rec);
+          setReturnToDownloadModal(true);
+          setIsDownloadModalOpen(false);
+        }}
+        onToast={showToast}
+      />
 
       {/* Toast System */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />

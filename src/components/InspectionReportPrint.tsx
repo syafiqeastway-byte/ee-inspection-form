@@ -9,6 +9,21 @@ interface InspectionReportPrintProps {
   onBack: () => void;
 }
 
+function getDirectDriveImageUrl(url: string): string {
+  if (!url || typeof url !== 'string') return '';
+  if (url.startsWith('data:image')) return url;
+  let fileId = '';
+  const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  const pathMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (idMatch) fileId = idMatch[1];
+  else if (pathMatch) fileId = pathMatch[1];
+
+  if (fileId) {
+    return `https://lh3.googleusercontent.com/d/${fileId}`;
+  }
+  return url;
+}
+
 export const InspectionReportPrint: React.FC<InspectionReportPrintProps> = ({ record, onBack }) => {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const sections = record.machineType === 'ENGINE' ? engineSections : batterySections;
@@ -67,7 +82,7 @@ export const InspectionReportPrint: React.FC<InspectionReportPrintProps> = ({ re
           onClick={onBack}
           className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-semibold text-sm rounded-xl border border-slate-300 shadow-sm hover:bg-slate-50 transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" /> Back to Dashboard
+          <ArrowLeft className="w-4 h-4" /> Back
         </button>
 
         <div className="flex items-center gap-2.5">
@@ -236,10 +251,10 @@ export const InspectionReportPrint: React.FC<InspectionReportPrintProps> = ({ re
             <h2 className="text-base font-bold text-slate-900 uppercase border-b-2 border-slate-900 pb-2 mb-4">
               Visual Inspection Evidence ({record.machineType} TYPE)
             </h2>
-
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {pictureConfig.map((cfg) => {
-                const img = record.pictures[cfg.key];
+                const imgRaw = record.pictures ? record.pictures[cfg.key] : '';
+                const img = getDirectDriveImageUrl(imgRaw);
                 return (
                   <div key={cfg.key} className="border border-slate-200 rounded-lg p-2 bg-slate-50 flex flex-col justify-between">
                     <div className="text-[11px] font-bold text-slate-700 mb-1 truncate uppercase" title={cfg.label}>
@@ -247,7 +262,26 @@ export const InspectionReportPrint: React.FC<InspectionReportPrintProps> = ({ re
                     </div>
                     <div className="h-32 bg-slate-200 rounded overflow-hidden flex items-center justify-center">
                       {img ? (
-                        <img src={img} alt={cfg.label} className="w-full h-full object-cover" />
+                        <img
+                          src={img}
+                          alt={cfg.label}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            // Fallback to thumbnail endpoint if lh3 fails
+                            const target = e.currentTarget;
+                            if (!target.dataset.triedFallback && imgRaw) {
+                              target.dataset.triedFallback = 'true';
+                              let fId = '';
+                              const m1 = imgRaw.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                              const m2 = imgRaw.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                              if (m1) fId = m1[1];
+                              else if (m2) fId = m2[1];
+                              if (fId) {
+                                target.src = `https://drive.google.com/thumbnail?id=${fId}&sz=w800`;
+                              }
+                            }
+                          }}
+                        />
                       ) : (
                         <span className="text-[10px] text-slate-400 italic">Not Uploaded</span>
                       )}
