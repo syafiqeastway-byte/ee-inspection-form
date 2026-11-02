@@ -47,3 +47,28 @@ export function incrementFormCounter(type: MachineType) {
     console.error('Failed to increment form counter', e);
   }
 }
+
+export function syncFormCounterWithMax(type: MachineType, nextNum: number) {
+  if (typeof nextNum !== 'number' || isNaN(nextNum) || nextNum <= 0) return;
+  const counters = getStoredCounters();
+  let updated = false;
+  if (type === 'ENGINE') {
+    if (nextNum > counters.engine) {
+      counters.engine = nextNum;
+      updated = true;
+    }
+  } else {
+    if (nextNum > counters.battery) {
+      counters.battery = nextNum;
+      updated = true;
+    }
+  }
+  if (updated) {
+    try {
+      localStorage.setItem(FORM_COUNTER_KEY, JSON.stringify(counters));
+    } catch (e) {
+      console.error('Failed to sync form counter with max', e);
+    }
+  }
+}
+

@@ -1,6 +1,6 @@
 import { MachineType, PmaRecord, SavedInspectionRecord, ChecklistStatus } from '../types/inspection';
 import { getStoredPmaDatabase } from '../data/pmaDatabase';
-import { generateNextFormNumber } from '../utils/formNumberGenerator';
+import { generateNextFormNumber, syncFormCounterWithMax } from '../utils/formNumberGenerator';
 import {
   batterySections,
   engineSections,
@@ -65,15 +65,38 @@ export function hasGoogleScriptRun(): boolean {
 
 /**
  * Fetches the next available form number from Google Sheet (Spreadsheet ID: 1jJXC-sS3ONnnFX-2MoDCkjxHm-Mh9Pr1RWuXEtangCc)
- * Reads the last row / highest existing form number from sheet 'ENGINE TYPE' or 'BATTERY TYPE'.
+ * Reads Column A / highest existing form number from sheet 'ENGINE TYPE' or 'BATTERY TYPE'.
  */
-export async function fetchBackendFormNo(machineType: MachineType): Promise<string> {
+export async function fetchBackendFormNo(
+  machineType: MachineType,
+  localRecords: SavedInspectionRecord[] = []
+): Promise<string> {
   const isEngine = machineType === 'ENGINE';
-  const primarySheetName = isEngine ? 'ENGINE TYPE' : 'BATTERY TYPE';
+  const primarySheetName = isEngine ? SHEET_NAME_ENGINE : SHEET_NAME_BATTERY;
   const fallbackSheetName = isEngine ? 'ENGINE' : 'BATTERY';
   const prefix = isEngine ? 'EE-IFE-' : 'EE-IFB-';
+  const keyTag = isEngine ? 'IFE' : 'IFB';
 
-  // 1. Direct Google Sheets GViz CSV queries (Fastest, zero CORS/redirect issues)
+  let maxNum = 0;
+
+  // Regex to extract numerical part of Form No from strings like "EE-IFE-122", "EE IFE 122", "EE-IFB-566", "IFB-566", etc.
+  const formNoRegex = new RegExp(`(?:EE[-_ ]?)?${keyTag}[-_ ]?0*(\\d+)`, 'i');
+
+  // 1. Check local records first
+  if (Array.isArray(localRecords)) {
+    for (const rec of localRecords) {
+      if (!rec || !rec.formNo) continue;
+      const match = rec.formNo.match(formNoRegex);
+      if (match) {
+        const parsed = parseInt(match[1], 10);
+        if (!isNaN(parsed) && parsed > maxNum) {
+          maxNum = parsed;
+        }
+      }
+    }
+  }
+
+  // 2. Direct Google Sheets GViz CSV queries (Fastest, zero CORS/redirect issues)
   const candidateSheets = [primarySheetName, fallbackSheetName];
   for (const sheetCandidate of candidateSheets) {
     try {
@@ -81,35 +104,34 @@ export async function fetchBackendFormNo(machineType: MachineType): Promise<stri
       const res = await fetch(gvizUrl, { method: 'GET', cache: 'no-store' });
       if (res.ok) {
         const csvText = await res.text();
-        const lines = csvText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-        let maxNum = 0;
-        let validDataRowCount = 0;
+        const rows = parseCsvRows(csvText);
 
         // Skip header row (index 0)
-        for (let i = 1; i < lines.length; i++) {
-          const rawRow = lines[i];
-          if (!rawRow) continue;
-          validDataRowCount++;
+        for (let r = 1; r < rows.length; r++) {
+          const row = rows[r];
+          if (!row || row.length === 0) continue;
 
-          const cols = rawRow.split(',').map((c) => c.replace(/^["']|["']$/g, '').trim().toUpperCase());
-          // Check all columns in the row for prefix matching (e.g. EE-IFE-001, EE-IFE-002)
-          for (const col of cols) {
-            if (col.startsWith(prefix)) {
-              const numPart = col.replace(prefix, '').trim();
-              const parsed = parseInt(numPart, 10);
-              if (!isNaN(parsed) && parsed > maxNum) {
-                maxNum = parsed;
+          // Primary check: Column 0 (Form No)
+          const col0 = (row[0] || '').trim();
+          const match0 = col0.match(formNoRegex);
+          if (match0) {
+            const parsed = parseInt(match0[1], 10);
+            if (!isNaN(parsed) && parsed > maxNum) {
+              maxNum = parsed;
+            }
+          } else {
+            // Secondary check: first 5 columns in case of shifted columns
+            for (let c = 1; c < Math.min(row.length, 5); c++) {
+              const val = (row[c] || '').trim();
+              const matchC = val.match(formNoRegex);
+              if (matchC) {
+                const parsed = parseInt(matchC[1], 10);
+                if (!isNaN(parsed) && parsed > maxNum) {
+                  maxNum = parsed;
+                }
               }
             }
           }
-        }
-
-        if (maxNum > 0) {
-          const next = maxNum + 1;
-          return `${prefix}${String(next).padStart(3, '0')}`;
-        } else if (validDataRowCount > 0) {
-          const next = validDataRowCount + 1;
-          return `${prefix}${String(next).padStart(3, '0')}`;
         }
       }
     } catch {
@@ -117,7 +139,7 @@ export async function fetchBackendFormNo(machineType: MachineType): Promise<stri
     }
   }
 
-  // 2. If embedded in Google Apps Script HtmlService
+  // 3. Check Apps Script endpoint if available
   if (hasGoogleScriptRun()) {
     try {
       const serverNum: string = await new Promise((resolve, reject) => {
@@ -126,15 +148,20 @@ export async function fetchBackendFormNo(machineType: MachineType): Promise<stri
           .withFailureHandler((err: any) => reject(err))
           .getLatestFormNumber(primarySheetName, prefix);
       });
-      if (serverNum && serverNum.startsWith(prefix)) {
-        return serverNum;
+      if (serverNum) {
+        const matchServer = serverNum.match(formNoRegex);
+        if (matchServer) {
+          const parsed = parseInt(matchServer[1], 10);
+          if (!isNaN(parsed) && parsed > maxNum) {
+            maxNum = parsed - 1;
+          }
+        }
       }
     } catch {
       // Ignore
     }
   }
 
-  // 3. Fetch via Apps Script Web App if URL is configured
   const endpoint = getAppsScriptUrl();
   if (endpoint) {
     try {
@@ -145,7 +172,13 @@ export async function fetchBackendFormNo(machineType: MachineType): Promise<stri
       if (resp.ok) {
         const json = await resp.json();
         if (json && json.formNo) {
-          return json.formNo;
+          const matchJson = String(json.formNo).match(formNoRegex);
+          if (matchJson) {
+            const parsed = parseInt(matchJson[1], 10);
+            if (!isNaN(parsed) && parsed > maxNum) {
+              maxNum = parsed - 1;
+            }
+          }
         }
       }
     } catch {
@@ -153,7 +186,12 @@ export async function fetchBackendFormNo(machineType: MachineType): Promise<stri
     }
   }
 
-  return generateNextFormNumber(machineType);
+  const nextNum = maxNum > 0 ? maxNum + 1 : 1;
+
+  // Keep local storage form counter in sync with max number
+  syncFormCounterWithMax(machineType, nextNum);
+
+  return `${prefix}${String(nextNum).padStart(3, '0')}`;
 }
 
 /**

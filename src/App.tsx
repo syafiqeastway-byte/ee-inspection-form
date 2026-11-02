@@ -272,10 +272,10 @@ export default function App() {
   // Sync Form Number when Machine Type switches from Google Sheet (BATTERY / ENGINE sheet last row)
   useEffect(() => {
     setFormNo('Loading Form No...');
-    fetchBackendFormNo(machineType).then((num) => {
+    fetchBackendFormNo(machineType, savedInspections).then((num) => {
       setFormNo(num);
     });
-  }, [machineType]);
+  }, [machineType, savedInspections]);
 
   // Click outside PMA dropdown handler
   useEffect(() => {
@@ -622,7 +622,7 @@ export default function App() {
 
     // Live re-check of latest Form Number from Google Sheet to avoid duplicate form numbers across concurrent users
     try {
-      const freshFormNo = await fetchBackendFormNo(machineType);
+      const freshFormNo = await fetchBackendFormNo(machineType, savedInspections);
       if (freshFormNo && (freshFormNo.startsWith('EE-IFE-') || freshFormNo.startsWith('EE-IFB-'))) {
         activeFormNo = freshFormNo;
         setFormNo(freshFormNo);
@@ -876,7 +876,7 @@ export default function App() {
     resetFormState();
 
     // Fetch next real Form No from Google Sheet
-    fetchBackendFormNo(machineType).then((num) => {
+    fetchBackendFormNo(machineType, updatedHistory).then((num) => {
       if (num) setFormNo(num);
     });
 
